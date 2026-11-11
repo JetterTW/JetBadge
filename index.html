@@ -36,6 +36,9 @@
       grid-template-columns: 1fr;
       gap: 24px;
     }
+    .container > * {
+      min-width: 0;
+    }
 
     header {
       display: flex;
@@ -83,6 +86,9 @@
       grid-template-columns: 1fr 1fr;
       gap: 24px;
     }
+    .grid-2 > * {
+      min-width: 0;
+    }
 
     @media (max-width: 900px) {
       .grid-2 { grid-template-columns: 1fr; }
@@ -94,6 +100,8 @@
       border-radius: var(--radius);
       padding: 20px;
       box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+      min-width: 0;
+      max-width: 100%;
     }
 
     .card-title {
@@ -301,6 +309,8 @@
     }
     .tab-pane {
       display: none;
+      min-width: 0;
+      max-width: 100%;
     }
     .tab-pane.active {
       display: block;
@@ -530,14 +540,22 @@
       border: 1px solid var(--card-border);
       border-radius: 8px;
       padding: 12px;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow: hidden;
     }
     .filmstrip-list {
       display: flex;
+      flex-wrap: wrap;
       gap: 10px;
-      overflow-x: auto;
-      padding: 4px 2px 6px;
+      max-height: 290px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 6px 4px;
       min-height: 112px;
-      align-items: center;
+      align-items: flex-start;
+      align-content: flex-start;
     }
     .slide-card {
       flex: 0 0 auto;
@@ -550,9 +568,10 @@
       flex-direction: column;
       align-items: center;
       gap: 4px;
-      cursor: pointer;
+      cursor: grab;
+      user-select: none;
       position: relative;
-      transition: border-color 0.15s, transform 0.15s;
+      transition: border-color 0.15s, transform 0.15s, opacity 0.15s, box-shadow 0.12s;
     }
     .slide-card:hover {
       border-color: var(--primary);
@@ -560,6 +579,19 @@
     .slide-card.active {
       border-color: var(--accent);
       background: rgba(6, 182, 212, 0.12);
+    }
+    .slide-card.dragging {
+      opacity: 0.42;
+      transform: scale(0.95);
+      cursor: grabbing;
+    }
+    .slide-card.drag-over-before {
+      box-shadow: -4px 0 0 0 var(--accent);
+      border-left-color: var(--accent);
+    }
+    .slide-card.drag-over-after {
+      box-shadow: 4px 0 0 0 var(--accent);
+      border-right-color: var(--accent);
     }
     .slide-card-index {
       position: absolute;
@@ -975,7 +1007,7 @@
         <!-- 底部縮圖佇列 -->
         <div class="filmstrip-wrap">
           <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;" data-i18n="slideshowFilmstripHeader">
-            多圖順序與逐張微調清單 (點擊縮圖切換並調整每張大小與位置)
+            多圖順序與逐張微調清單 (點擊縮圖調整大小與位置，直接拖曳卡片可調整順序)
           </div>
           <div id="slideshowThumbList" class="filmstrip-list">
             <span data-i18n="slideshowFilmstripEmpty" style="color: var(--text-muted); font-size: 13px; margin: auto;">尚未加入圖片 — 請點擊上方按鈕或拖曳多張 JPG / PNG 圖片</span>
@@ -1005,6 +1037,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=36"></script>
+  <script type="module" src="./app.js?v=37"></script>
 </body>
 </html>

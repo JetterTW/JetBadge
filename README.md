@@ -28,8 +28,8 @@
 4. **GIF 動畫 / MP4 影片 / AVI 上傳**
    - 直接於瀏覽器內擷取影格並轉碼壓縮為 **MJPEG AVI** 後上傳至徽章 `/bgp_wa0.avi`。
    - 完整支援 `.avi` 檔案即時動畫預覽（含輪播速率如 `0.1 fps`）與智慧相容處理：自動去除 `JUNK` / `APP2` / `COM` 等冗餘區段，並在解析度超過徽章螢幕（如 `368×368` → `240×240`）或超出剩餘 Flash 空間時自動縮放與最佳化壓縮，保留原始輪播幀率。
-5. **多圖輪播製作 AVI（逐張微調 ＋ 間隔設定 ＋ 匯出／直傳）**
-   - 可一次加入或拖曳多張圖片（JPG / PNG / WebP），點擊底部縮圖逐一拖曳構圖位置、滾輪/滑桿 **`1%` 單位** 縮放與旋轉微調，並支援調整前後順序與預覽輪播效果。
+5. **多圖輪播製作 AVI（逐張微調 ＋ 拖曳排序 ＋ 間隔設定 ＋ 匯出／直傳）**
+   - 可一次加入或拖曳多張圖片（JPG / PNG / WebP），點擊底部自動換行縮圖清單逐一拖曳構圖位置、滾輪/滑桿 **`1%` 單位** 縮放與旋轉微調，並支援**直接拖曳縮圖卡片**調整播放順序與預覽輪播效果。
    - 支援設定圖與圖間隔時間（**`0.1`～`0.9` 秒每 `0.1` 秒一段，`1`～`10` 秒每 `1` 秒一段**），自動精確封裝為標準 RIFF MJPEG AVI 時間基準（如 `0.1s` → `10 fps`，`10s` → `0.1 fps`）。
    - 可離線一鍵 **「匯出成 AVI 檔案」**，或在連線徽章時自動依剩餘 Flash 容量最佳化壓縮並直接上傳至徽章輪播顯示。
 6. **穩定傳輸與充電保護即時提醒**
@@ -113,8 +113,8 @@
 4. **GIF / MP4 / AVI Animation Upload**
    - Extracts frames directly in the browser and transcodes them into a badge-compatible **MJPEG AVI** stream for `/bgp_wa0.avi`.
    - Full `.avi` support with live animated canvas preview and smart firmware adaptation: parses RIFF MJPEG frames, strips redundant headers (`JUNK` / `APP2` / `COM`), preserves slow slideshow frame rates (e.g. `0.1 fps`), and automatically resizes/compresses oversized AVI files (such as `368×368`) to match the badge screen and remaining Flash capacity.
-5. **Multi-Photo AVI Slideshow Maker (Per-Photo Crop + Custom Interval + Export/Upload)**
-   - Add or drag multiple images at once, click any thumbnail in the filmstrip to individually pan position, zoom (`1%` steps), rotate, and reorder slides, with an interactive loop preview player.
+5. **Multi-Photo AVI Slideshow Maker (Per-Photo Crop + Drag Reorder + Interval + Export/Upload)**
+   - Add or drag multiple images at once, click any thumbnail in the wrapping queue to individually pan position, zoom (`1%` steps), rotate, and **drag & drop cards to reorder** slides cleanly, with an interactive loop preview player.
    - Choose exact slide intervals (`0.1s` to `0.9s` in `0.1s` steps, and `1s` to `10s` in `1s` steps), muxed into exact RIFF MJPEG AVI timebases (`10 fps` down to `0.1 fps`).
    - Either **Export as `.avi`** locally offline or **Convert & Upload directly to your connected badge** with automatic Flash-budget compression.
 6. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**

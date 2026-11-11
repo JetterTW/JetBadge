@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=36";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=36";
+import { SuperBandClient } from "./baji.js?v=37";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=37";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -1378,6 +1378,14 @@ let slidePreviewIdx = 0;
 let slideThumbTimer = null;
 let slideEstimateTimer = null;
 let slideEstimateGen = 0;
+let dragSlideIndex = null;
+
+function clearSlideCardDragClasses() {
+  if (!$slideshowThumbList) return;
+  $slideshowThumbList.querySelectorAll(".slide-card").forEach((el) => {
+    el.classList.remove("dragging", "drag-over-before", "drag-over-after");
+  });
+}
 
 function getSlideIntervalSeconds() {
   const v = $selSlideInterval ? parseFloat($selSlideInterval.value) : 1;
@@ -1530,6 +1538,8 @@ function renderSlideshowFilmstrip() {
     const card = document.createElement("div");
     card.className = `slide-card${idx === activeSlideIdx ? " active" : ""}`;
     card.setAttribute("data-slide-id", String(slide.id));
+    card.setAttribute("data-slide-idx", String(idx));
+    card.draggable = true;
     card.title = slide.fileName;
 
     const badge = document.createElement("span");
@@ -1540,6 +1550,7 @@ function renderSlideshowFilmstrip() {
     imgEl.className = "slide-card-thumb";
     imgEl.src = slide.thumbUrl;
     imgEl.alt = slide.fileName;
+    imgEl.draggable = false;
 
     const nameEl = document.createElement("div");
     nameEl.className = "slide-card-name";
@@ -1589,9 +1600,79 @@ function renderSlideshowFilmstrip() {
     card.appendChild(nameEl);
     card.appendChild(actions);
 
+    card.addEventListener("dragstart", (e) => {
+      if (slidePreviewTimer) stopSlideshowPreview();
+      dragSlideIndex = idx;
+      card.classList.add("dragging");
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("application/x-jetbadge-slide", String(idx));
+        e.dataTransfer.setData("text/plain", String(idx));
+      }
+    });
+
+    card.addEventListener("dragover", (e) => {
+      if (dragSlideIndex === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      if (dragSlideIndex === idx) {
+        clearSlideCardDragClasses();
+        card.classList.add("dragging");
+        return;
+      }
+      const rect = typeof card.getBoundingClientRect === "function" ? card.getBoundingClientRect() : null;
+      const after = rect ? (e.clientX - rect.left) > (rect.width / 2) : false;
+      $slideshowThumbList.querySelectorAll(".slide-card").forEach((el) => {
+        if (el !== card) el.classList.remove("drag-over-before", "drag-over-after");
+      });
+      card.classList.toggle("drag-over-before", !after);
+      card.classList.toggle("drag-over-after", after);
+    });
+
+    card.addEventListener("dragleave", () => {
+      card.classList.remove("drag-over-before", "drag-over-after");
+    });
+
+    card.addEventListener("drop", (e) => {
+      if (dragSlideIndex === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = typeof card.getBoundingClientRect === "function" ? card.getBoundingClientRect() : null;
+      const after = rect ? (e.clientX - rect.left) > (rect.width / 2) : false;
+      const fromIdx = dragSlideIndex;
+      dragSlideIndex = null;
+      clearSlideCardDragClasses();
+      reorderSlide(fromIdx, after ? idx + 1 : idx);
+    });
+
+    card.addEventListener("dragend", () => {
+      dragSlideIndex = null;
+      clearSlideCardDragClasses();
+    });
+
     card.addEventListener("click", () => selectSlide(idx));
     $slideshowThumbList.appendChild(card);
   });
+}
+
+function reorderSlide(fromIdx, insertBeforeIdx) {
+  if (fromIdx < 0 || fromIdx >= slides.length) return;
+  let targetIdx = fromIdx < insertBeforeIdx ? insertBeforeIdx - 1 : insertBeforeIdx;
+  targetIdx = Math.max(0, Math.min(slides.length - 1, targetIdx));
+  if (targetIdx === fromIdx) return;
+
+  if (slidePreviewTimer) stopSlideshowPreview();
+  const activeId = getActiveSlide()?.id ?? null;
+  const [moved] = slides.splice(fromIdx, 1);
+  slides.splice(targetIdx, 0, moved);
+  if (activeId !== null) {
+    activeSlideIdx = slides.findIndex((s) => s.id === activeId);
+  }
+  renderSlideshowCanvas();
+  renderSlideshowFilmstrip();
+  updateSlideshowControlsState();
+  updateSlideshowEstimate();
 }
 
 function selectSlide(idx) {
@@ -1610,17 +1691,7 @@ function selectSlide(idx) {
 function moveSlide(idx, delta) {
   const target = idx + delta;
   if (target < 0 || target >= slides.length) return;
-  if (slidePreviewTimer) stopSlideshowPreview();
-  const activeId = getActiveSlide()?.id ?? null;
-  const [moved] = slides.splice(idx, 1);
-  slides.splice(target, 0, moved);
-  if (activeId !== null) {
-    activeSlideIdx = slides.findIndex((s) => s.id === activeId);
-  }
-  renderSlideshowCanvas();
-  renderSlideshowFilmstrip();
-  updateSlideshowControlsState();
-  updateSlideshowEstimate();
+  reorderSlide(idx, delta > 0 ? target + 1 : target);
 }
 
 function removeSlideAt(idx) {
@@ -1866,9 +1937,38 @@ if ($selSlideInterval) {
   });
 }
 
+if ($slideshowThumbList) {
+  $slideshowThumbList.addEventListener("dragover", (e) => {
+    if (dragSlideIndex !== null || (e.dataTransfer?.files && e.dataTransfer.files.length > 0) ||
+        e.dataTransfer?.types?.includes?.("Files")) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = dragSlideIndex !== null ? "move" : "copy";
+    }
+  });
+
+  $slideshowThumbList.addEventListener("drop", (e) => {
+    if (dragSlideIndex !== null) {
+      e.preventDefault();
+      e.stopPropagation();
+      const fromIdx = dragSlideIndex;
+      dragSlideIndex = null;
+      clearSlideCardDragClasses();
+      reorderSlide(fromIdx, slides.length);
+      return;
+    }
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      e.preventDefault();
+      e.stopPropagation();
+      addSlidesFromFiles(e.dataTransfer.files);
+    }
+  });
+}
+
 if ($slideshowDropArea) {
   ['dragenter', 'dragover'].forEach((eventName) => {
     $slideshowDropArea.addEventListener(eventName, (e) => {
+      if (dragSlideIndex !== null) return;
       e.preventDefault();
       e.stopPropagation();
       if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
@@ -1879,6 +1979,7 @@ if ($slideshowDropArea) {
 
   ['dragleave', 'dragend'].forEach((eventName) => {
     $slideshowDropArea.addEventListener(eventName, (e) => {
+      if (dragSlideIndex !== null) return;
       e.preventDefault();
       e.stopPropagation();
       $slideshowDropArea.style.borderColor = "var(--card-border)";
@@ -1887,6 +1988,7 @@ if ($slideshowDropArea) {
   });
 
   $slideshowDropArea.addEventListener("drop", (e) => {
+    if (dragSlideIndex !== null) return;
     e.preventDefault();
     e.stopPropagation();
     $slideshowDropArea.style.borderColor = "var(--card-border)";
@@ -1903,7 +2005,7 @@ if ($slideshowDropArea) {
         }
       }
     }
-    addSlidesFromFiles(dropped);
+    if (dropped.length > 0) addSlidesFromFiles(dropped);
   });
 
   $slideshowDropArea.addEventListener("click", () => {
