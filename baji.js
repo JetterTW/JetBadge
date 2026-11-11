@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v34)
+ * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v35)
  * Verified against BG02 / oem_DG01 (JieLi AC695N / BR28) Firmware:
  * - Service 7E400001-B5A3-F393-E0A9-E50E24DCCA9D
  * - Write   7E400002-B5A3-F393-E0A9-E50E24DCCA9D
  * - Notify  7E400003-B5A3-F393-E0A9-E50E24DCCA9D
  */
-import { t } from "./i18n.js?v=34";
+import { t } from "./i18n.js?v=35";
 
 export const BleProfiles = [
   {
@@ -269,7 +269,7 @@ export class SuperBandClient {
 
       const status = this.parseStatus({ magic, payload });
       const statusStr = status !== null ? ` status=${status}` : "";
-      if (this.quietRxLog && status !== null && status >= 1000 && status <= 2000) {
+      if (this.quietRxLog && status !== null && status >= 1000 && status <= 10000) {
         const seqAck = status - 1000;
         if (seqAck > 0 && (seqAck % 25 === 0 || seqAck === 1)) {
           this.log(t("logFlashAck", { seq: seqAck, status }));
@@ -741,18 +741,177 @@ export class SuperBandClient {
   }
 
   /**
+   * 解析標準 RIFF AVI ('AVI ') 容器：支援提取 MJPG 影格與幀率/尺寸資訊，並安全跳過 JUNK / vprp / INFO / idx1 等區塊。
+   */
+  static parseMjpegAvi(aviBytes) {
+    const src = aviBytes instanceof Uint8Array ? aviBytes : new Uint8Array(aviBytes);
+    const readTag = (pos) =>
+      String.fromCharCode(src[pos], src[pos + 1], src[pos + 2], src[pos + 3]);
+
+    if (src.length < 16 || readTag(0) !== "RIFF" || readTag(8) !== "AVI ") {
+      throw new Error(t("errInvalidAvi"));
+    }
+
+    const dv = new DataView(src.buffer, src.byteOffset, src.byteLength);
+    let width = 0;
+    let height = 0;
+    let usPerFrame = 0;
+    let totalFramesHdr = 0;
+    let scale = 0;
+    let rate = 0;
+    let codec = "";
+    const rawVideoChunks = [];
+    let inVideoStream = false;
+
+    const walk = (start, end) => {
+      let i = start;
+      while (i + 8 <= end) {
+        const tag = readTag(i);
+        const sz = dv.getUint32(i + 4, true);
+        const dataStart = i + 8;
+        const dataEnd = Math.min(end, dataStart + sz);
+
+        if (tag === "RIFF" || tag === "LIST") {
+          if (dataStart + 4 <= end) {
+            const subType = readTag(dataStart);
+            if (subType === "strl") inVideoStream = false;
+            walk(dataStart + 4, dataEnd);
+          }
+        } else if (tag === "avih" && dataEnd - dataStart >= 40) {
+          usPerFrame = dv.getUint32(dataStart, true);
+          totalFramesHdr = dv.getUint32(dataStart + 16, true);
+          width = dv.getUint32(dataStart + 32, true);
+          height = dv.getUint32(dataStart + 36, true);
+        } else if (tag === "strh" && dataEnd - dataStart >= 28) {
+          const fccType = readTag(dataStart);
+          inVideoStream = fccType === "vids";
+          if (inVideoStream) {
+            codec = readTag(dataStart + 4).replace(/\0/g, "").trim();
+            scale = dv.getUint32(dataStart + 20, true);
+            rate = dv.getUint32(dataStart + 24, true);
+            if (dataEnd - dataStart >= 36) {
+              const len = dv.getUint32(dataStart + 32, true);
+              if (len > 0 && !totalFramesHdr) totalFramesHdr = len;
+            }
+          }
+        } else if (tag === "strf" && inVideoStream && dataEnd - dataStart >= 20) {
+          const w = dv.getInt32(dataStart + 4, true);
+          const h = Math.abs(dv.getInt32(dataStart + 8, true));
+          const comp = readTag(dataStart + 16).replace(/\0/g, "").trim();
+          if (w > 0 && h > 0) {
+            width = w;
+            height = h;
+          }
+          if (!codec || codec === "DIB") codec = comp || codec;
+        } else if (tag === "00dc" || tag === "00db") {
+          if (dataEnd > dataStart) {
+            rawVideoChunks.push(src.subarray(dataStart, dataEnd));
+          }
+        }
+
+        const step = 8 + (sz % 2 === 1 ? sz + 1 : sz);
+        if (step < 8) break;
+        i += step;
+      }
+    };
+
+    const riffLimit = Math.min(src.length, 8 + dv.getUint32(4, true));
+    walk(12, riffLimit);
+
+    const upperCodec = codec.toUpperCase();
+    const looksJpeg = rawVideoChunks.length > 0 &&
+      rawVideoChunks.some((c) => c.length >= 4 && c[0] === 0xFF && c[1] === 0xD8);
+    const isMjpeg = upperCodec === "MJPG" || upperCodec === "JPEG" || (upperCodec === "" && looksJpeg);
+
+    const frames = isMjpeg
+      ? rawVideoChunks.filter((c) => c.length >= 4 && c[0] === 0xFF && c[1] === 0xD8)
+      : rawVideoChunks;
+
+    let fps = 5;
+    if (scale > 0 && rate > 0) {
+      fps = rate / scale;
+    } else if (usPerFrame > 0) {
+      fps = 1000000 / usPerFrame;
+    }
+    if (!Number.isFinite(fps) || fps <= 0) fps = 5;
+    const effectiveUsPerFrame = usPerFrame > 0 ? usPerFrame : Math.round(1000000 / fps);
+
+    return {
+      isAvi: true,
+      codec: upperCodec || (isMjpeg ? "MJPG" : "UNKNOWN"),
+      isMjpeg,
+      width,
+      height,
+      fps,
+      usPerFrame: effectiveUsPerFrame,
+      scale,
+      rate,
+      totalFrames: frames.length || totalFramesHdr,
+      frames,
+    };
+  }
+
+  /**
    * 將一張或多張經 sanitizeBadgeJpeg 驗證之 Baseline JPEG 影格封裝為符合 BG02/DG01 韌體 (0x050b2c / JLHWJPEG)
    * 規範的標準 RIFF AVI (MJPG) 容器位元組流。
    * 內含 hdrl (avih, strl vids/MJPG strh+strf)、LIST movi (00dc 偶對齊分塊) 與 idx1 索引表。
+   * 支援數值 FPS 或 { fps, scale, rate } 物件，可保留如 0.1 fps (每格 10 秒) 之慢速輪播節奏。
    */
-  static buildMjpegAvi(jpegFrames, width, height, fps = 5) {
+  static buildMjpegAvi(jpegFrames, width, height, timing = 5) {
     if (!Array.isArray(jpegFrames) || jpegFrames.length === 0) {
       throw new Error(t("errAviNoFrames"));
     }
     const w = Math.max(1, Math.round(width));
     const h = Math.max(1, Math.round(height));
-    const safeFps = Math.max(1, Math.min(30, Math.round(fps || 5)));
-    const usPerFrame = Math.round(1000000 / safeFps);
+
+    let dwScale = 1;
+    let dwRate = 5;
+    let safeFps = 5;
+    let usedExactScaleRate = false;
+
+    if (timing && typeof timing === "object") {
+      const reqScale = Number(timing.scale);
+      const reqRate = Number(timing.rate);
+      const reqFps = Number(timing.fps);
+      if (reqScale > 0 && reqRate > 0) {
+        const ratio = reqRate / reqScale;
+        safeFps = Math.max(0.05, Math.min(30, ratio));
+        if (Math.abs(safeFps - ratio) < 1e-6) {
+          dwScale = Math.round(reqScale);
+          dwRate = Math.round(reqRate);
+          usedExactScaleRate = true;
+        }
+      } else if (Number.isFinite(reqFps) && reqFps > 0) {
+        safeFps = Math.max(0.05, Math.min(30, reqFps));
+      }
+    } else {
+      const numFps = Number(timing);
+      safeFps = Number.isFinite(numFps) && numFps > 0 ? Math.max(0.05, Math.min(30, numFps)) : 5;
+    }
+
+    if (!usedExactScaleRate) {
+      if (safeFps >= 1) {
+        const rounded = Math.round(safeFps);
+        if (Math.abs(safeFps - rounded) < 1e-3) {
+          dwScale = 1;
+          dwRate = rounded;
+        } else {
+          dwScale = 100;
+          dwRate = Math.round(safeFps * 100);
+        }
+      } else {
+        const inv = 1 / safeFps;
+        const roundedInv = Math.round(inv);
+        if (Math.abs(inv - roundedInv) < 1e-3) {
+          dwScale = roundedInv;
+          dwRate = 1;
+        } else {
+          dwScale = 1000;
+          dwRate = Math.max(1, Math.round(safeFps * 1000));
+        }
+      }
+    }
+    const usPerFrame = Math.max(1, Math.round((1000000 * dwScale) / dwRate));
 
     const frames = jpegFrames.map((f) => SuperBandClient.sanitizeBadgeJpeg(f));
     let maxFrameSize = 0;
@@ -793,8 +952,8 @@ export class SuperBandClient {
     // avih (56B)
     writeTag(24, "avih");
     dv.setUint32(28, 56, true);
-    dv.setUint32(32, usPerFrame, true);                  // dwMicroSecPerFrame (預設 200000 = 5fps)
-    dv.setUint32(36, maxFrameSize * safeFps, true);      // dwMaxBytesPerSec
+    dv.setUint32(32, usPerFrame, true);                  // dwMicroSecPerFrame
+    dv.setUint32(36, Math.max(1, Math.round((maxFrameSize * dwRate) / dwScale)), true); // dwMaxBytesPerSec
     dv.setUint32(40, 0, true);                           // dwPaddingGranularity
     dv.setUint32(44, 0x00000910, true);                  // AVIF_HASINDEX | AVIF_ISINTERLEAVED | AVIF_TRUSTCKTYPE
     dv.setUint32(48, frameCount, true);                  // dwTotalFrames
@@ -818,8 +977,8 @@ export class SuperBandClient {
     dv.setUint16(120, 0, true);                          // wPriority
     dv.setUint16(122, 0, true);                          // wLanguage
     dv.setUint32(124, 0, true);                          // dwInitialFrames
-    dv.setUint32(128, 1, true);                          // dwScale
-    dv.setUint32(132, safeFps, true);                    // dwRate
+    dv.setUint32(128, dwScale, true);                    // dwScale
+    dv.setUint32(132, dwRate, true);                     // dwRate
     dv.setUint32(136, 0, true);                          // dwStart
     dv.setUint32(140, frameCount, true);                 // dwLength
     dv.setUint32(144, maxFrameSize, true);               // dwSuggestedBufferSize

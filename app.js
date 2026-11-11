@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=34";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=34";
+import { SuperBandClient } from "./baji.js?v=35";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=35";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -53,6 +53,7 @@ const $selMediaType = $("selMediaType");
 const $btnUploadMedia = $("btnUploadMedia");
 const $mediaPreviewContainer = $("mediaPreviewContainer");
 const $mediaDetails = $("mediaDetails");
+const $mediaDropArea = $("mediaDropArea");
 
 // 進度條與非阻塞提示橫幅
 const $progressWrap = $("progressWrap");
@@ -126,8 +127,9 @@ client.onDisconnected = () => {
   updateUIConnectionState(false);
 };
 
-// 記錄本次連線觀測到之可用 Flash 基準上限，以便正確繪製剩餘空間進度條
+// 記錄本次連線觀測到之可用 Flash 基準上限與目前剩餘空間
 let observedTotalFlashKb = 0;
+let lastFreeStorageKb = null;
 
 // ==========================================
 // 1. 藍牙連線與設備管理
@@ -163,6 +165,7 @@ function updateUIConnectionState(connected, info = null) {
     if ($btnRefreshSpace) $btnRefreshSpace.disabled = true;
 
     observedTotalFlashKb = 0;
+    lastFreeStorageKb = null;
     $infoName.textContent = "-";
     $infoResolution.textContent = "-";
     $infoProfile.textContent = "-";
@@ -170,6 +173,7 @@ function updateUIConnectionState(connected, info = null) {
     $infoStorageText.textContent = "-";
     if ($deviceRemainingSpace) $deviceRemainingSpace.textContent = "-";
     $storageFill.style.width = "0%";
+    if (typeof renderMediaDetails === "function") renderMediaDetails();
   }
 }
 
@@ -204,6 +208,7 @@ $btnDisconnect.addEventListener("click", async () => {
 // ==========================================
 function updateStorageDisplay(freeKb) {
   if (freeKb != null && freeKb >= 0) {
+    lastFreeStorageKb = freeKb;
     const text = freeKb >= 1024
       ? `${freeKb.toFixed(2)} KB (${(freeKb / 1024).toFixed(2)} MB)`
       : `${freeKb.toFixed(2)} KB`;
@@ -216,10 +221,12 @@ function updateStorageDisplay(freeKb) {
     const pct = observedTotalFlashKb > 0 ? Math.min(100, Math.max(0, Math.round((usedKb / observedTotalFlashKb) * 100))) : 0;
     $storageFill.style.width = `${pct}%`;
   } else {
+    lastFreeStorageKb = null;
     $infoStorageText.textContent = "-";
     if ($deviceRemainingSpace) $deviceRemainingSpace.textContent = "-";
     $storageFill.style.width = "0%";
   }
+  if (typeof renderMediaDetails === "function") renderMediaDetails();
 }
 
 async function refreshStorageSpace() {
@@ -477,7 +484,16 @@ $dropArea.addEventListener("drop", (e) => {
   }
 
   if (file) {
-    loadFileIntoCropper(file);
+    const lower = file.name.toLowerCase();
+    const isMediaExt = lower.endsWith(".avi") || lower.endsWith(".gif") || lower.endsWith(".mp4") || lower.endsWith(".webm") ||
+      file.type.includes("gif") || file.type.includes("video");
+    if (isMediaExt) {
+      switchTab("tab-video");
+      log(t("logDropSwitchedToVideoTab", { name: file.name }));
+      selectMediaFile(file);
+    } else {
+      loadFileIntoCropper(file);
+    }
   } else {
     log(t("logInvalidDropFile"));
   }
@@ -697,13 +713,181 @@ $btnUploadCropped.addEventListener("click", async () => {
 // 5. GIF 動態圖 / MP4 影片 / AVI 動畫上傳
 // ==========================================
 let currentMediaFile = null;
-let lastMediaState = { selected: false, name: "", sizeMb: "", type: "", isAvi: false };
+let currentMediaPreviewUrl = null;
+let aviPreviewTimer = null;
+let mediaPreviewGen = 0;
+let lastMediaState = {
+  selected: false,
+  name: "",
+  sizeBytes: 0,
+  sizeMb: "",
+  type: "",
+  isAvi: false,
+  aviInfo: null,
+  previewIdx: 1,
+};
 
-$btnSelectMedia.addEventListener("click", () => $fileMediaInput.click());
+function getBadgeMediaLimits() {
+  const targetW = Math.min(client.screenWidth || cropState.targetW || 240, 359);
+  const targetH = Math.min(client.screenHeight || cropState.targetH || 240, 359);
+  const maxAviBytes = lastFreeStorageKb != null && lastFreeStorageKb > 16
+    ? Math.max(16 * 1024, Math.min(350 * 1024, Math.floor((lastFreeStorageKb - 8) * 1024)))
+    : 220 * 1024;
+  return { targetW, targetH, maxAviBytes };
+}
 
-$fileMediaInput.addEventListener("change", (e) => {
-  const file = e.target.files[0];
+function stopMediaPreview() {
+  mediaPreviewGen++;
+  if (aviPreviewTimer) {
+    clearInterval(aviPreviewTimer);
+    aviPreviewTimer = null;
+  }
+  if (currentMediaPreviewUrl) {
+    try { URL.revokeObjectURL(currentMediaPreviewUrl); } catch (_) {}
+    currentMediaPreviewUrl = null;
+  }
+}
+
+async function decodeJpegBytesToDrawable(jpegBytes) {
+  const blob = new Blob([jpegBytes], { type: "image/jpeg" });
+  if (typeof createImageBitmap === "function") {
+    const bitmap = await createImageBitmap(blob);
+    return {
+      source: bitmap,
+      width: bitmap.width,
+      height: bitmap.height,
+      close: () => bitmap.close(),
+    };
+  }
+  const url = URL.createObjectURL(blob);
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error(t("errVideoDecodeFailed")));
+    el.src = url;
+  });
+  return {
+    source: img,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+    close: () => URL.revokeObjectURL(url),
+  };
+}
+
+function formatAviPreviewBadgeText(aviInfo, idx) {
+  const secVal = aviInfo.usPerFrame / 1000000;
+  const secStr = secVal >= 1 ? secVal.toFixed(1) : secVal.toFixed(2);
+  return t("mediaAviPreviewBadge", {
+    idx,
+    total: aviInfo.frames.length,
+    sec: secStr,
+  });
+}
+
+function renderMediaDetails() {
+  if (!$mediaDetails || !lastMediaState.selected) return;
+  if (lastMediaState.aviInfo) {
+    const info = lastMediaState.aviInfo;
+    const { targetW, targetH, maxAviBytes } = getBadgeMediaLimits();
+    const needsResize = info.width > targetW || info.height > targetH || info.width > 359 || info.height > 359;
+    const needsShrink = lastMediaState.sizeBytes > maxAviBytes;
+    const fpsNum = info.fps >= 1
+      ? info.fps.toFixed(1).replace(/\.0$/, "")
+      : info.fps.toFixed(2).replace(/0$/, "");
+    const secVal = info.usPerFrame / 1000000;
+    const secStr = secVal >= 1 ? secVal.toFixed(1) : secVal.toFixed(2);
+    const fpsStr = t("mediaAviFpsSec", { fps: fpsNum, sec: secStr });
+    const autoNote = (needsResize || needsShrink)
+      ? t("mediaAviAutoOptimizeNote", {
+          bw: targetW,
+          bh: targetH,
+          budgetKb: Math.round(maxAviBytes / 1024),
+        })
+      : "";
+    $mediaDetails.textContent = t("mediaAviDetailsFmt", {
+      name: lastMediaState.name,
+      sizeKb: (lastMediaState.sizeBytes / 1024).toFixed(2),
+      codec: info.codec,
+      w: info.width,
+      h: info.height,
+      frames: info.frames.length,
+      fpsStr,
+      autoNote,
+    });
+    const badgeEl = document.getElementById("aviPreviewBadge");
+    if (badgeEl) {
+      badgeEl.textContent = formatAviPreviewBadgeText(info, lastMediaState.previewIdx || 1);
+    }
+    return;
+  }
+
+  $mediaDetails.textContent = t("mediaDetailsFmt", {
+    name: lastMediaState.name,
+    sizeMb: lastMediaState.sizeMb,
+    type: lastMediaState.type,
+  });
+}
+
+async function startAviCanvasPreview(parsed, gen) {
+  $mediaPreviewContainer.innerHTML = "";
+  const canvas = document.createElement("canvas");
+  const maxBox = 200;
+  const srcW = parsed.width || 240;
+  const srcH = parsed.height || 240;
+  const scale = Math.min(maxBox / srcW, maxBox / srcH, 1);
+  canvas.width = Math.max(1, Math.round(srcW * scale));
+  canvas.height = Math.max(1, Math.round(srcH * scale));
+  canvas.style.borderRadius = "8px";
+  canvas.style.border = "1px solid var(--card-border)";
+  canvas.style.background = "#000000";
+
+  const badge = document.createElement("span");
+  badge.id = "aviPreviewBadge";
+  badge.style.color = "#38bdf8";
+  badge.style.fontSize = "12px";
+
+  $mediaPreviewContainer.appendChild(canvas);
+  $mediaPreviewContainer.appendChild(badge);
+
+  const ctx = canvas.getContext("2d");
+  let frameIdx = 0;
+
+  const drawFrame = async (idx) => {
+    if (gen !== mediaPreviewGen) return;
+    lastMediaState.previewIdx = idx + 1;
+    badge.textContent = formatAviPreviewBadgeText(parsed, idx + 1);
+    let drawable = null;
+    try {
+      drawable = await decodeJpegBytesToDrawable(parsed.frames[idx]);
+      if (gen !== mediaPreviewGen) return;
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(drawable.source, 0, 0, canvas.width, canvas.height);
+    } catch (_) {
+      // 忽略單幀預覽解碼失敗，交由上傳階段處理
+    } finally {
+      if (drawable) drawable.close();
+    }
+  };
+
+  await drawFrame(0);
+  if (gen !== mediaPreviewGen || parsed.frames.length <= 1) return;
+
+  // 若為慢速輪播 (如 0.1 fps = 10s/格)，預覽以 1.5s 節奏循環展示全部影格，實際上傳保留原 FPS
+  const realMs = Math.round(parsed.usPerFrame / 1000);
+  const previewMs = realMs > 2000 ? 1500 : Math.max(100, realMs);
+  aviPreviewTimer = setInterval(() => {
+    if (gen !== mediaPreviewGen) return;
+    frameIdx = (frameIdx + 1) % parsed.frames.length;
+    drawFrame(frameIdx);
+  }, previewMs);
+}
+
+async function selectMediaFile(file) {
   if (!file) return;
+  stopMediaPreview();
+  const gen = mediaPreviewGen;
+
   currentMediaFile = file;
   $txtMediaName.value = file.name.replace(/\.[^/.]+$/, "");
 
@@ -711,22 +895,26 @@ $fileMediaInput.addEventListener("change", (e) => {
   const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
   const typeLabel = file.type || "application/octet-stream";
   let isAvi = false;
+  let aviInfo = null;
 
+  const isAviNameOrMime = lower.endsWith(".avi") || typeLabel.includes("avi") || typeLabel.includes("msvideo");
   if (file.type.includes("gif") || lower.endsWith(".gif")) {
     $selMediaType.value = "ANIMATION";
     $mediaPreviewContainer.innerHTML = "";
+    currentMediaPreviewUrl = URL.createObjectURL(file);
     const img = document.createElement("img");
-    img.src = URL.createObjectURL(file);
+    img.src = currentMediaPreviewUrl;
     img.className = "preview-thumbnail";
     img.style.width = "180px";
     img.style.height = "180px";
     img.style.objectFit = "contain";
     $mediaPreviewContainer.appendChild(img);
-  } else if (file.type.includes("video") || lower.endsWith(".mp4") || lower.endsWith(".webm")) {
+  } else if (!isAviNameOrMime && (file.type.includes("video") || lower.endsWith(".mp4") || lower.endsWith(".webm"))) {
     $selMediaType.value = "VIDEO";
     $mediaPreviewContainer.innerHTML = "";
+    currentMediaPreviewUrl = URL.createObjectURL(file);
     const vid = document.createElement("video");
-    vid.src = URL.createObjectURL(file);
+    vid.src = currentMediaPreviewUrl;
     vid.autoplay = true;
     vid.loop = true;
     vid.muted = true;
@@ -734,9 +922,35 @@ $fileMediaInput.addEventListener("change", (e) => {
     vid.style.maxHeight = "200px";
     vid.style.borderRadius = "8px";
     $mediaPreviewContainer.appendChild(vid);
-  } else if (lower.endsWith(".avi")) {
+  } else {
     $selMediaType.value = "VIDEO";
     isAvi = true;
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      if (gen !== mediaPreviewGen) return;
+      const parsed = SuperBandClient.parseMjpegAvi(buf);
+      if (parsed.isMjpeg && parsed.frames.length > 0) {
+        aviInfo = parsed;
+      }
+    } catch (_) {
+      aviInfo = null;
+    }
+  }
+
+  lastMediaState = {
+    selected: true,
+    name: file.name,
+    sizeBytes: file.size,
+    sizeMb,
+    type: typeLabel,
+    isAvi,
+    aviInfo,
+    previewIdx: 1,
+  };
+
+  if (aviInfo) {
+    await startAviCanvasPreview(aviInfo, gen);
+  } else if (isAvi) {
     $mediaPreviewContainer.innerHTML = "";
     const span = document.createElement("span");
     span.style.color = "#38bdf8";
@@ -745,19 +959,55 @@ $fileMediaInput.addEventListener("change", (e) => {
     $mediaPreviewContainer.appendChild(span);
   }
 
-  lastMediaState = {
-    selected: true,
-    name: file.name,
-    sizeMb,
-    type: typeLabel,
-    isAvi,
-  };
-  $mediaDetails.textContent = t("mediaDetailsFmt", {
-    name: file.name,
-    sizeMb,
-    type: typeLabel,
-  });
+  renderMediaDetails();
+}
+
+$btnSelectMedia.addEventListener("click", () => $fileMediaInput.click());
+
+$fileMediaInput.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (file) selectMediaFile(file);
 });
+
+if ($mediaDropArea) {
+  ['dragenter', 'dragover'].forEach((eventName) => {
+    $mediaDropArea.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      $mediaDropArea.style.borderColor = "var(--accent)";
+      $mediaDropArea.style.background = "rgba(6, 182, 212, 0.08)";
+    });
+  });
+
+  ['dragleave', 'dragend'].forEach((eventName) => {
+    $mediaDropArea.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      $mediaDropArea.style.borderColor = "var(--card-border)";
+      $mediaDropArea.style.background = "#090d16";
+    });
+  });
+
+  $mediaDropArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $mediaDropArea.style.borderColor = "var(--card-border)";
+    $mediaDropArea.style.background = "#090d16";
+    let file = null;
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      file = e.dataTransfer.files[0];
+    } else if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      const item = e.dataTransfer.items[0];
+      if (item.kind === "file") file = item.getAsFile();
+    }
+    if (file) selectMediaFile(file);
+  });
+
+  $mediaDropArea.addEventListener("click", () => {
+    if (!currentMediaFile) $fileMediaInput.click();
+  });
+}
 
 function drawSourceCoverToBadgeCanvas(source, srcW, srcH, targetW, targetH) {
   const canvas = document.createElement("canvas");
@@ -777,11 +1027,114 @@ function drawSourceCoverToBadgeCanvas(source, srcW, srcH, targetW, targetH) {
 }
 
 async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 220 * 1024) {
+  const safeW = Math.min(targetW, 359);
+  const safeH = Math.min(targetH, 359);
   const rawBuf = new Uint8Array(await file.arrayBuffer());
-  const isAlreadyAvi = rawBuf.length >= 12 &&
+  const isRiffAvi = rawBuf.length >= 12 &&
     rawBuf[0] === 0x52 && rawBuf[1] === 0x49 && rawBuf[2] === 0x46 && rawBuf[3] === 0x46 &&
     rawBuf[8] === 0x41 && rawBuf[9] === 0x56 && rawBuf[10] === 0x49 && rawBuf[11] === 0x20;
-  if (isAlreadyAvi) return rawBuf;
+
+  let nonMjpegAviCodec = "";
+  if (isRiffAvi) {
+    const parsed = SuperBandClient.parseMjpegAvi(rawBuf);
+    const fpsLabel = parsed.fps >= 1
+      ? parsed.fps.toFixed(1).replace(/\.0$/, "")
+      : parsed.fps.toFixed(2).replace(/0$/, "");
+    log(t("logAviParsed", {
+      w: parsed.width,
+      h: parsed.height,
+      codec: parsed.codec,
+      frames: parsed.frames.length,
+      fps: fpsLabel,
+      kb: (rawBuf.length / 1024).toFixed(1),
+    }));
+
+    if (parsed.isMjpeg && parsed.frames.length > 0) {
+      const timing = (parsed.scale > 0 && parsed.rate > 0)
+        ? { scale: parsed.scale, rate: parsed.rate, fps: parsed.fps }
+        : parsed.fps;
+
+      // 路徑 1：尺寸 <= 徽章上限且 <= 359×359，先嘗試無損清理重封裝（移除 JUNK/vprp/APP2/COM）
+      const dimsOk = parsed.width > 0 && parsed.height > 0 &&
+        parsed.width <= safeW && parsed.height <= safeH &&
+        parsed.width <= 359 && parsed.height <= 359;
+      if (dimsOk) {
+        try {
+          const cleanFrames = parsed.frames.map((f) => SuperBandClient.sanitizeBadgeJpeg(f));
+          const remuxed = SuperBandClient.buildMjpegAvi(cleanFrames, parsed.width, parsed.height, timing);
+          if (remuxed.length <= maxAviBytes) {
+            log(t("logAviRemuxLossless", { bytes: remuxed.length }));
+            return { bytes: remuxed, width: parsed.width, height: parsed.height };
+          }
+        } catch (_) {
+          // 單幀含不相容抽樣或參數時改走瀏覽器解碼重編碼流程
+        }
+      }
+
+      // 路徑 2：將 MJPG 影格解碼縮放至徽章螢幕解析度並自適應壓縮，保留輪播節奏
+      const maxAviFrames = 24;
+      let selectedFrames = parsed.frames;
+      let outTiming = timing;
+      if (parsed.frames.length > maxAviFrames) {
+        selectedFrames = [];
+        for (let i = 0; i < maxAviFrames; i++) {
+          const idx = Math.min(parsed.frames.length - 1, Math.floor((i * parsed.frames.length) / maxAviFrames));
+          selectedFrames.push(parsed.frames[idx]);
+        }
+        outTiming = parsed.fps * (maxAviFrames / parsed.frames.length);
+      }
+
+      log(t("logAviOptimizing", {
+        srcW: parsed.width || safeW,
+        srcH: parsed.height || safeH,
+        dstW: safeW,
+        dstH: safeH,
+        frames: selectedFrames.length,
+        budgetKb: Math.round(maxAviBytes / 1024),
+      }));
+
+      const canvases = [];
+      for (const frameBytes of selectedFrames) {
+        let drawable = null;
+        try {
+          drawable = await decodeJpegBytesToDrawable(frameBytes);
+          canvases.push(drawSourceCoverToBadgeCanvas(
+            drawable.source,
+            drawable.width || safeW,
+            drawable.height || safeH,
+            safeW,
+            safeH
+          ));
+        } finally {
+          if (drawable) drawable.close();
+        }
+      }
+
+      let lastAvi = null;
+      for (const q of [0.85, 0.76, 0.65, 0.52, 0.40, 0.30]) {
+        const perFrameBudget = Math.max(2048, Math.floor((maxAviBytes - 640) / canvases.length));
+        const jpegs = [];
+        for (const c of canvases) {
+          jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget }));
+        }
+        lastAvi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, outTiming);
+        if (lastAvi.length <= maxAviBytes) {
+          log(t("logAviOptimizedDone", {
+            bytes: lastAvi.length,
+            kb: (lastAvi.length / 1024).toFixed(1),
+            q,
+          }));
+          return { bytes: lastAvi, width: safeW, height: safeH };
+        }
+      }
+      throw new Error(t("errAviTooLargeAfterCompress", {
+        kb: (lastAvi.length / 1024).toFixed(1),
+        budgetKb: Math.round(maxAviBytes / 1024),
+      }));
+    }
+
+    nonMjpegAviCodec = parsed.codec || "UNKNOWN";
+  }
 
   const fps = 5;
   const maxFrames = 18;
@@ -798,7 +1151,7 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
       const idx = Math.min(total - 1, Math.floor((i * total) / count));
       const { image } = await decoder.decode({ frameIndex: idx });
       try {
-        canvases.push(drawSourceCoverToBadgeCanvas(image, image.displayWidth || targetW, image.displayHeight || targetH, targetW, targetH));
+        canvases.push(drawSourceCoverToBadgeCanvas(image, image.displayWidth || safeW, image.displayHeight || safeH, safeW, safeH));
       } finally {
         image.close();
       }
@@ -813,7 +1166,7 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
         el.onerror = () => reject(new Error(t("errGifLoadFailed")));
         el.src = imgUrl;
       });
-      canvases.push(drawSourceCoverToBadgeCanvas(img, img.naturalWidth || targetW, img.naturalHeight || targetH, targetW, targetH));
+      canvases.push(drawSourceCoverToBadgeCanvas(img, img.naturalWidth || safeW, img.naturalHeight || safeH, safeW, safeH));
     } finally {
       URL.revokeObjectURL(imgUrl);
     }
@@ -827,7 +1180,11 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
     try {
       await new Promise((resolve, reject) => {
         video.onloadeddata = resolve;
-        video.onerror = () => reject(new Error(t("errVideoDecodeFailed")));
+        video.onerror = () => reject(new Error(
+          nonMjpegAviCodec
+            ? t("errAviCodecUnsupported", { codec: nonMjpegAviCodec })
+            : t("errVideoDecodeFailed")
+        ));
       });
       const duration = Math.max(0.2, Math.min(4.0, video.duration || 2.0));
       const count = Math.min(maxFrames, Math.max(2, Math.round(duration * fps)));
@@ -837,7 +1194,7 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
           video.onseeked = resolve;
           video.currentTime = Math.max(0, seekTime);
         });
-        canvases.push(drawSourceCoverToBadgeCanvas(video, video.videoWidth || targetW, video.videoHeight || targetH, targetW, targetH));
+        canvases.push(drawSourceCoverToBadgeCanvas(video, video.videoWidth || safeW, video.videoHeight || safeH, safeW, safeH));
       }
     } finally {
       URL.revokeObjectURL(videoUrl);
@@ -850,8 +1207,10 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
     for (const c of canvases) {
       jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget }));
     }
-    const avi = SuperBandClient.buildMjpegAvi(jpegs, targetW, targetH, fps);
-    if (avi.length <= maxAviBytes || q === 0.38) return avi;
+    const avi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, fps);
+    if (avi.length <= maxAviBytes || q === 0.38) {
+      return { bytes: avi, width: safeW, height: safeH };
+    }
   }
   throw new Error(t("errMediaSizeExceeded"));
 }
@@ -870,9 +1229,11 @@ $btnUploadMedia.addEventListener("click", async () => {
   try {
     $btnUploadMedia.disabled = true;
     showProgress(true, t("progressTranscodingMedia"));
-    const targetW = client.screenWidth || cropState.targetW || 240;
-    const targetH = client.screenHeight || cropState.targetH || 240;
-    const bytes = await encodeMediaFileToMjpegAvi(currentMediaFile, targetW, targetH, 220 * 1024);
+    const { targetW, targetH, maxAviBytes } = getBadgeMediaLimits();
+    const encoded = await encodeMediaFileToMjpegAvi(currentMediaFile, targetW, targetH, maxAviBytes);
+    const bytes = encoded.bytes;
+    const outW = encoded.width || targetW;
+    const outH = encoded.height || targetH;
     const fileName = $txtMediaName.value.trim() || currentMediaFile.name;
     const typeStr = $selMediaType.value;
     const slot = 0;
@@ -880,8 +1241,8 @@ $btnUploadMedia.addEventListener("click", async () => {
     log(t("logMediaUploadStart", {
       type: typeStr,
       name: fileName,
-      w: targetW,
-      h: targetH,
+      w: outW,
+      h: outH,
       bytes: bytes.length,
       slot,
     }));
@@ -928,13 +1289,18 @@ function updateProgress(sent, total, pct, statusText) {
 }
 
 // 頁籤切換
+function switchTab(targetId) {
+  document.querySelectorAll(".tab-btn").forEach((b) => {
+    b.classList.toggle("active", b.getAttribute("data-tab") === targetId);
+  });
+  document.querySelectorAll(".tab-pane").forEach((p) => {
+    p.classList.toggle("active", p.id === targetId);
+  });
+}
+
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
-    document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
-    btn.classList.add("active");
-    const targetId = btn.getAttribute("data-tab");
-    $(targetId).classList.add("active");
+    switchTab(btn.getAttribute("data-tab"));
   });
 });
 
@@ -993,7 +1359,7 @@ function applyLanguage() {
   }
 
   if (lastMediaState.selected) {
-    if (lastMediaState.isAvi && $mediaPreviewContainer) {
+    if (lastMediaState.isAvi && !lastMediaState.aviInfo && $mediaPreviewContainer) {
       $mediaPreviewContainer.innerHTML = "";
       const span = document.createElement("span");
       span.style.color = "#38bdf8";
@@ -1001,13 +1367,7 @@ function applyLanguage() {
       span.textContent = t("mediaPreviewAvi", { name: lastMediaState.name });
       $mediaPreviewContainer.appendChild(span);
     }
-    if ($mediaDetails) {
-      $mediaDetails.textContent = t("mediaDetailsFmt", {
-        name: lastMediaState.name,
-        sizeMb: lastMediaState.sizeMb,
-        type: lastMediaState.type,
-      });
-    }
+    renderMediaDetails();
   }
 
   if (currentImg) {

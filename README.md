@@ -26,8 +26,8 @@
    - 支援滑鼠拖曳平移、滾輪或滑桿縮放（`20% – 300%`）、向左／向右旋轉 `90°` 與一鍵重設。
    - 支援目標輸出解析度選擇（`240x240`、`360x360`、`240x280`、`128x128`），預設封裝為 BG02 原生可顯示之單影格 **MJPEG AVI**（`/bgp_wa0.avi`，固定 Slot 0）；亦提供 Baseline JPEG 與 RGB565 測試選項。
 4. **GIF 動畫 / MP4 影片 / AVI 上傳**
-   - 直接於瀏覽器內擷取影格並轉碼壓縮為 **MJPEG AVI**（預設上限 220 KB）後上傳至徽章 `/bgp_wa0.avi`。
-   - 亦支援直接上傳既有的 `.avi` 動畫檔案。
+   - 直接於瀏覽器內擷取影格並轉碼壓縮為 **MJPEG AVI** 後上傳至徽章 `/bgp_wa0.avi`。
+   - 完整支援 `.avi` 檔案即時動畫預覽（含輪播速率如 `0.1 fps`）與智慧相容處理：自動去除 `JUNK` / `APP2` / `COM` 等冗餘區段，並在解析度超過徽章螢幕（如 `368×368` → `240×240`）或超出剩餘 Flash 空間時自動縮放與最佳化壓縮，保留原始輪播幀率。
 5. **穩定傳輸與充電保護即時提醒**
    - 採用 `CMD=31`（每塊 200 Bytes）+ 徽章 Flash ACK 流控（`status = 1000 + seq`）與完整校驗和提交（`CMD=31 SUB=3`）。
    - 若徽章正連接充電線而觸發原廠韌體硬體保護（回報 `status=4 / ERROR_CHARGE_BATTERY`），頁面會立即以非阻塞提示橫幅提醒**先拔除充電線後再上傳**，避免重複重試或阻塞瀏覽器造成藍牙斷線。
@@ -107,7 +107,8 @@
    - Interactive mouse drag panning, scroll-wheel / slider zoom (`20% – 300%`), `90°` left/right rotation, and reset.
    - Configurable output resolutions (`240x240`, `360x360`, `240x280`, `128x128`), packaged by default as a clean single-frame **MJPEG AVI** (`/bgp_wa0.avi`, Slot 0), alongside optional Baseline JPEG and RGB565 test modes.
 4. **GIF / MP4 / AVI Animation Upload**
-   - Extracts frames directly in the browser and transcodes them into a badge-compatible **MJPEG AVI** stream (targeted within 220 KB), or uploads existing `.avi` files directly.
+   - Extracts frames directly in the browser and transcodes them into a badge-compatible **MJPEG AVI** stream for `/bgp_wa0.avi`.
+   - Full `.avi` support with live animated canvas preview and smart firmware adaptation: parses RIFF MJPEG frames, strips redundant headers (`JUNK` / `APP2` / `COM`), preserves slow slideshow frame rates (e.g. `0.1 fps`), and automatically resizes/compresses oversized AVI files (such as `368×368`) to match the badge screen and remaining Flash capacity.
 5. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**
    - Streams 200-byte chunks (`CMD=31 SUB=1`) synchronized with firmware Flash write ACKs (`status = 1000 + seq`) and full checksum verification (`CMD=31 SUB=3`).
    - Immediately detects firmware charging lock (`status=4 / ERROR_CHARGE_BATTERY`) and displays a non-blocking banner asking to unplug the USB charging cable—avoiding duplicate handshakes or modal `alert()` stalls that drop BLE connections.

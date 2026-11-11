@@ -561,7 +561,7 @@
     <div class="card">
       <div class="tab-header">
         <button class="tab-btn active" data-tab="tab-photo" data-i18n="tabPhoto">📸 相片裁切與上傳 (JPG/PNG)</button>
-        <button class="tab-btn" data-tab="tab-video" data-i18n="tabVideo">🎬 GIF 動畫 / MP4 影片上傳</button>
+        <button class="tab-btn" data-tab="tab-video" data-i18n="tabVideo">🎬 GIF / MP4 / AVI 動畫與影片</button>
       </div>
 
       <div id="uploadNotice" class="notice-banner" role="status" aria-live="polite">
@@ -666,15 +666,15 @@
         </div>
       </div>
 
-      <!-- Tab 2: GIF 與 MP4 影片 -->
+      <!-- Tab 2: GIF / MP4 / AVI -->
       <div class="tab-pane" id="tab-video">
         <div class="grid-2">
           <div>
             <div class="form-group">
-              <label data-i18n="labelSelectMedia">選擇 GIF 動態圖 或 MP4 影片檔案</label>
+              <label data-i18n="labelSelectMedia">選擇 GIF 動態圖、MP4 影片或 AVI 檔案</label>
               <input type="file" id="fileMediaInput" accept="image/gif,video/mp4,video/webm,.avi,video/x-msvideo" style="display: none;" />
               <button id="btnSelectMedia" class="btn-outline" data-i18n="btnSelectMedia" style="width: 100%; justify-content: center;">
-                🎞️ 瀏覽 GIF 動畫 / MP4 影片
+                🎞️ 瀏覽 GIF / MP4 / AVI 檔案
               </button>
             </div>
 
@@ -696,9 +696,9 @@
             </button>
           </div>
 
-          <!-- 媒體預覽區 -->
-          <div style="background: #090d16; border: 1px solid var(--card-border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 240px;">
-            <div id="mediaPreviewContainer" style="max-width: 100%; max-height: 260px; display: flex; align-items: center; justify-content: center;">
+          <!-- 媒體預覽區 (亦支援拖曳 GIF / MP4 / AVI 檔案) -->
+          <div id="mediaDropArea" style="background: #090d16; border: 2px dashed var(--card-border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 240px; text-align: center; transition: border-color 0.15s, background 0.15s;">
+            <div id="mediaPreviewContainer" style="max-width: 100%; max-height: 260px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;">
               <span data-i18n="mediaPreviewEmpty" style="color: var(--text-muted); font-size: 13px;">尚未選取檔案預覽</span>
             </div>
             <div id="mediaDetails" style="font-size: 12px; color: var(--text-muted); margin-top: 10px;"></div>
@@ -728,6 +728,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=34"></script>
+  <script type="module" src="./app.js?v=35"></script>
 </body>
 </html>
