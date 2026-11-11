@@ -1,14 +1,16 @@
 /**
- * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v10)
+ * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v34)
  * Verified against BG02 / oem_DG01 (JieLi AC695N / BR28) Firmware:
  * - Service 7E400001-B5A3-F393-E0A9-E50E24DCCA9D
  * - Write   7E400002-B5A3-F393-E0A9-E50E24DCCA9D
  * - Notify  7E400003-B5A3-F393-E0A9-E50E24DCCA9D
  */
+import { t } from "./i18n.js?v=34";
 
 export const BleProfiles = [
   {
     id: "BG02_NUS",
+    nameKey: "profileBg02",
     name: "BG02 / DG01 (SuperBand專屬通訊通道)",
     serviceUuid: "7e400001-b5a3-f393-e0a9-e50e24dcca9d",
     writeUuid:   "7e400002-b5a3-f393-e0a9-e50e24dcca9d",
@@ -17,6 +19,7 @@ export const BleProfiles = [
   },
   {
     id: "VENDOR_5833",
+    nameKey: "profileVendor5833",
     name: "VENDOR_5833 (SuperBand通用徽章通道)",
     serviceUuid: "5833ff01-9b8b-5191-6142-22a4536ef123",
     writeUuid:   "5833ff02-9b8b-5191-6142-22a4536ef123",
@@ -24,6 +27,7 @@ export const BleProfiles = [
   },
   {
     id: "JIELI_01F0",
+    nameKey: "profileJieli01f0",
     name: "JIELI_01F0 (Beambox / Niji吧唧通道)",
     serviceUuid: "000001f0-0000-1000-8000-00805f9b34fb",
     writeUuid:   "000001f1-0000-1000-8000-00805f9b34fb",
@@ -31,6 +35,7 @@ export const BleProfiles = [
   },
   {
     id: "VENDOR_FEE0",
+    nameKey: "profileVendorFee0",
     name: "VENDOR_FEE0 (經典LED徽章標準)",
     serviceUuid: "0000fee0-0000-1000-8000-00805f9b34fb",
     writeUuid:   "0000fee1-0000-1000-8000-00805f9b34fb",
@@ -38,6 +43,7 @@ export const BleProfiles = [
   },
   {
     id: "ISSC",
+    nameKey: "profileIssc",
     name: "ISSC (Microchip串口備選)",
     serviceUuid: "49535343-fe7d-4ae5-8fa9-9fafd205e455",
     writeUuid:   "49535343-8841-43f4-a8d4-ecbe34729bb3",
@@ -75,7 +81,7 @@ export class SuperBandClient {
 
   async connect(acceptAllDevices = true, namePrefix = null) {
     if (!navigator.bluetooth) {
-      throw new Error("此瀏覽器不支援 Web Bluetooth，請使用 Chrome 或 Edge 瀏覽器！");
+      throw new Error(t("errWebBleUnsupported"));
     }
 
     const allServices = BleProfiles.map(p => p.serviceUuid);
@@ -93,21 +99,22 @@ export class SuperBandClient {
       options.filters = allServices.map(s => ({ services: [s] }));
     }
 
-    this.log(`開始搜尋藍牙設備... (過濾模式: ${acceptAllDevices ? "顯示全部附近設備" : "僅匹配徽章Service"})`);
+    const modeStr = acceptAllDevices ? t("scanModeAll") : t("scanModeService");
+    this.log(t("logScanningBle", { mode: modeStr }));
     this.device = await navigator.bluetooth.requestDevice(options);
-    this.log(`選中設備: ${this.device.name || "(未命名設備)"} [ID: ${this.device.id}]`);
+    this.log(t("logSelectedDevice", { name: this.device.name || t("unnamedDevice"), id: this.device.id }));
 
     this.device.addEventListener("gattserverdisconnected", () => {
-      this.log("藍牙設備已斷開連線！");
+      this.log(t("logBleLinkDropped"));
       this.cleanup();
       if (this.onDisconnected) {
         try { this.onDisconnected(); } catch (e) {}
       }
     });
 
-    this.log("正在連接 GATT 服務器...");
+    this.log(t("logConnectingGatt"));
     this.server = await this.device.gatt.connect();
-    this.log("GATT 服務器連線成功，正在自動配對通訊通道 (優先測試 BG02 專屬 NUS 通道)...");
+    this.log(t("logGattConnected"));
 
     let matched = false;
     for (const profile of BleProfiles) {
@@ -151,14 +158,15 @@ export class SuperBandClient {
                   const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
                   this.handleIncomingBytes(bytes);
                 });
-                this.log(`   └ 輔助 Notify 特徵值已啟用: ${profile.auxNotifyUuid}`);
+                this.log(t("logAuxNotifyEnabled", { uuid: profile.auxNotifyUuid }));
               }
             } catch (e) {}
           }
 
-          this.log(`🎯 成功配對通訊通道: ${profile.name}`);
-          this.log(`   └ 寫入 UUID: ${write.uuid}`);
-          this.log(`   └ 通知 UUID: ${notify.uuid}`);
+          const profileLabel = profile.nameKey ? t(profile.nameKey) : profile.name;
+          this.log(t("logProfileMatched", { name: profileLabel }));
+          this.log(t("logWriteUuid", { uuid: write.uuid }));
+          this.log(t("logNotifyUuid", { uuid: notify.uuid }));
           matched = true;
           break;
         }
@@ -169,12 +177,13 @@ export class SuperBandClient {
 
     if (!matched) {
       this.cleanup();
-      throw new Error("未能找到支援的徽章通訊特徵值，請確認徽章已開機且為相容型號。");
+      throw new Error(t("errNoMatchingProfile"));
     }
 
     return {
       deviceName: this.device.name || "SuperBand Badge",
-      profileName: this.activeProfile.name,
+      profileName: this.activeProfile.nameKey ? t(this.activeProfile.nameKey) : this.activeProfile.name,
+      profileKey: this.activeProfile.nameKey || null,
     };
   }
 
@@ -185,7 +194,7 @@ export class SuperBandClient {
     this.activeProfile = null;
     this.rxBuffer = new Uint8Array(0);
     for (const waiter of this.waiters) {
-      waiter.reject(new Error("設備已斷線"));
+      waiter.reject(new Error(t("errDeviceDisconnected")));
     }
     this.waiters = [];
   }
@@ -259,14 +268,14 @@ export class SuperBandClient {
       }
 
       const status = this.parseStatus({ magic, payload });
-      const statusStr = status !== null ? ` 狀態=${status}` : "";
+      const statusStr = status !== null ? ` status=${status}` : "";
       if (this.quietRxLog && status !== null && status >= 1000 && status <= 2000) {
         const seqAck = status - 1000;
         if (seqAck > 0 && (seqAck % 25 === 0 || seqAck === 1)) {
-          this.log(`📥 收到徽章 Flash 寫入確認: 第 ${seqAck} 塊 (status=${status})`);
+          this.log(t("logFlashAck", { seq: seqAck, status }));
         }
       } else if (!this.quietRxLog || (status !== 0 && status !== null)) {
-        this.log(`📥 收到徽章封包: magic=0x${magic.toString(16).toUpperCase()} cmd=${cmd} sub=${sub}${statusStr} (長度: ${frameBytes.length}B)`);
+        this.log(t("logRxPacket", { magic: magic.toString(16).toUpperCase(), cmd, sub, statusStr, len: frameBytes.length }));
       }
       this.dispatchFrame({ magic, cmd, sub, payload, raw: frameBytes });
     }
@@ -289,7 +298,7 @@ export class SuperBandClient {
 
   awaitFrame(predicate, timeoutMs = 6000) {
     if (!this.isConnected) {
-      return Promise.reject(new Error("設備已斷線"));
+      return Promise.reject(new Error(t("errDeviceDisconnected")));
     }
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -314,7 +323,7 @@ export class SuperBandClient {
         settled = true;
         const idx = this.waiters.indexOf(waiter);
         if (idx >= 0) this.waiters.splice(idx, 1);
-        reject(new Error(`等待徽章回應逾時 (${timeoutMs}ms)`));
+        reject(new Error(t("errWaitTimeout", { ms: timeoutMs })));
       }, timeoutMs);
 
       this.waiters.push(waiter);
@@ -342,11 +351,11 @@ export class SuperBandClient {
 
   async sendRaw(bytes, preferWithoutResponse = true) {
     if (!this.isConnected || !this.writeChar) {
-      throw new Error("徽章尚未連線，請先點擊「搜尋並連接徽章」");
+      throw new Error(t("errNotConnectedConnectFirst"));
     }
     const writeOnce = async (chunk) => {
       if (!this.writeChar || !this.writeChar.properties) {
-        throw new Error("徽章連線已中斷 (設備已重啟或斷線)");
+        throw new Error(t("errConnectionInterruptedRestart"));
       }
       const props = this.writeChar.properties;
       if (preferWithoutResponse && props && props.writeWithoutResponse) {
@@ -370,12 +379,12 @@ export class SuperBandClient {
       await writeOnce(bytes);
     } catch (err) {
       if (!this.isConnected || !this.writeChar) {
-        throw new Error("徽章連線已中斷 (設備已重啟或斷線)");
+        throw new Error(t("errConnectionInterruptedRestart"));
       }
       // 若作業系統藍牙 MTU 限制單次寫入長度，自動以 20B GATT 分段送出 (韌體 0x02f27a 具備 500B 自動重組緩衝區)
       const mtu = 20;
       for (let off = 0; off < bytes.length; off += mtu) {
-        if (!this.writeChar) throw new Error("徽章連線已中斷");
+        if (!this.writeChar) throw new Error(t("errConnectionInterrupted"));
         const slice = bytes.slice(off, Math.min(off + mtu, bytes.length));
         await writeOnce(slice);
       }
@@ -384,10 +393,10 @@ export class SuperBandClient {
 
   // --- 業務指令：讀取設備資訊、電池與 Flash 剩餘空間 ---
   async getDeviceInfo() {
-    this.log("正在讀取徽章設備資訊與螢幕尺寸...");
+    this.log(t("logReadingDeviceInfo"));
 
     let mfg = "-";
-    let model = this.device.name || "BG02";
+    let model = (this.device && this.device.name ? this.device.name.trim() : "") || "BG02";
     let fw = "-";
     let batteryPct = null;
 
@@ -397,17 +406,20 @@ export class SuperBandClient {
       try {
         const cMfg = await dis.getCharacteristic("00002a29-0000-1000-8000-00805f9b34fb");
         const v = await cMfg.readValue();
-        mfg = new TextDecoder().decode(v);
+        const disMfg = new TextDecoder().decode(v).replace(/\0/g, "").trim();
+        if (disMfg) mfg = disMfg;
       } catch (e) {}
       try {
         const cModel = await dis.getCharacteristic("00002a24-0000-1000-8000-00805f9b34fb");
         const v = await cModel.readValue();
-        model = new TextDecoder().decode(v);
+        const disModel = new TextDecoder().decode(v).replace(/\0/g, "").trim();
+        if (disModel) model = disModel;
       } catch (e) {}
       try {
         const cFw = await dis.getCharacteristic("00002a26-0000-1000-8000-00805f9b34fb");
         const v = await cFw.readValue();
-        fw = new TextDecoder().decode(v);
+        const disFw = new TextDecoder().decode(v).replace(/\0/g, "").trim();
+        if (disFw) fw = disFw;
       } catch (e) {}
     } catch (e) {}
 
@@ -417,13 +429,13 @@ export class SuperBandClient {
       const cBat = await bas.getCharacteristic("00002a19-0000-1000-8000-00805f9b34fb");
       const v = await cBat.readValue();
       batteryPct = v.getUint8(0);
-      this.log(`🔋 取得徽章電池電量: ${batteryPct}%`);
+      this.log(t("logBatteryLevel", { pct: batteryPct }));
     } catch (e) {}
 
     // 3. 向 BG02 查詢螢幕規格 (cmd=32, sub=2, 韌體 0x0710a2)
     let detectedRes = "240 x 240";
     try {
-      this.log("發送螢幕規格查詢 (getDialClockInfo: cmd=32, sub=2)...");
+      this.log(t("logQueryResolution"));
       const queryFrame = this.encodeCdFrame(32, 2, new Uint8Array(0));
       const waitPromise = this.awaitFrame(f => f.cmd === 32 && f.sub === 2, 2500);
       await this.sendRaw(queryFrame);
@@ -436,11 +448,11 @@ export class SuperBandClient {
           this.screenWidth = w;
           this.screenHeight = h;
           detectedRes = `${w} x ${h}`;
-          this.log(`✨ 成功讀取硬體螢幕解析度: ${detectedRes}`);
+          this.log(t("logResolutionOk", { res: detectedRes }));
         }
       }
     } catch (e) {
-      this.log(`螢幕尺寸查詢提示: ${e.message} (採用預設 240x240)`);
+      this.log(t("logResolutionHint", { msg: e.message }));
     }
 
     // 4. 向 BG02 查詢錶盤 DialID (CMD=32, SUB=5) 與實際 Flash 剩餘空間 (CMD=32, SUB=4)
@@ -448,7 +460,7 @@ export class SuperBandClient {
     let freeStorageKb = null;
     let activePhotoCount = 0;
     try {
-      this.log("發送徽章錶盤槽位識別查詢 (CMD=32, SUB=5)...");
+      this.log(t("logQueryDialId"));
       const dialFrame = this.encodeCdFrame(32, 5, new Uint8Array(0));
       const waitDial = this.awaitFrame(f => f.cmd === 32 && f.sub === 5, 2500);
       await this.sendRaw(dialFrame);
@@ -467,10 +479,14 @@ export class SuperBandClient {
           }
         }
         const rawHex = Array.from(dialResp.payload).map(b => b.toString(16).padStart(2, "0")).join(" ");
-        this.log(`🧩 取得徽章主錶盤資訊: 槽位數=${activePhotoCount}, DialID=0x${this.activeDialId.toString(16).toUpperCase().padStart(8, "0")} [${rawHex.slice(0, 48)}...]`);
+        this.log(t("logDialInfo", {
+          count: activePhotoCount,
+          dialId: this.activeDialId.toString(16).toUpperCase().padStart(8, "0"),
+          hex: rawHex.slice(0, 48),
+        }));
       }
     } catch (e) {
-      this.log(`錶盤識別查詢提示: ${e.message}`);
+      this.log(t("logDialHint", { msg: e.message }));
     }
 
     // 5. 查詢真實 Flash 剩餘空間 (CMD=32, SUB=4 -> 韌體 0x07117a 回傳 8-byte BE freeBytes)
@@ -478,7 +494,7 @@ export class SuperBandClient {
       freeStorageKb = await this.getRemainingSpace();
       freeStorageBytes = Math.round(freeStorageKb * 1024);
     } catch (e) {
-      this.log(`可用空間查詢提示: ${e.message}`);
+      this.log(t("logSpaceHint", { msg: e.message }));
     }
 
     return {
@@ -509,8 +525,8 @@ export class SuperBandClient {
 
   // --- 業務指令：單獨查詢真實剩餘可用 Flash 空間 (CMD=32, SUB=4) ---
   async getRemainingSpace() {
-    if (!this.isConnected) throw new Error("尚未連線");
-    this.log("發送實際剩餘 Flash 空間查詢 (CMD=32, SUB=4)...");
+    if (!this.isConnected) throw new Error(t("errNotConnected"));
+    this.log(t("logQuerySpace"));
     const spaceFrame = this.encodeCdFrame(32, 4, new Uint8Array(0));
     const waitSpace = this.awaitFrame(f => f.cmd === 32 && f.sub === 4, 2500);
     await this.sendRaw(spaceFrame);
@@ -518,10 +534,10 @@ export class SuperBandClient {
     const freeBytes = SuperBandClient.parseFreeSpaceBytes(spaceResp.payload);
     if (freeBytes !== null) {
       const freeKb = freeBytes / 1024;
-      this.log(`💾 取得徽章實際剩餘空間: ${freeKb.toFixed(2)} KB (${freeBytes} Bytes)`);
+      this.log(t("logFreeSpace", { kb: freeKb.toFixed(2), bytes: freeBytes }));
       return freeKb;
     }
-    throw new Error("徽章回傳之空間數據長度不足");
+    throw new Error(t("errSpacePayloadShort"));
   }
 
   // --- 輔助：RGB888 轉 RGB565 Little-Endian (BG02 硬體點陣格式) ---
@@ -553,7 +569,7 @@ export class SuperBandClient {
   static sanitizeBadgeJpeg(jpegBytes) {
     const src = jpegBytes instanceof Uint8Array ? jpegBytes : new Uint8Array(jpegBytes);
     if (src.length < 4 || src[0] !== 0xFF || src[1] !== 0xD8) {
-      throw new Error("無效的 JPEG 檔案：缺少 SOI (0xFFD8) 標頭");
+      throw new Error(t("errJpegInvalidSoi"));
     }
 
     const parts = [new Uint8Array([0xFF, 0xD8])];
@@ -566,14 +582,14 @@ export class SuperBandClient {
       const marker = src[pos++];
 
       if (marker === 0x00 || (marker >= 0xD0 && marker <= 0xD7)) continue;
-      if (marker === 0xD9) throw new Error("無效的 JPEG：尚未進入掃描數據即遇到 EOI");
-      if (pos + 2 > src.length) throw new Error("JPEG 區段長度截斷");
+      if (marker === 0xD9) throw new Error(t("errJpegEoiBeforeSos"));
+      if (pos + 2 > src.length) throw new Error(t("errJpegTruncated"));
 
       const segLen = (src[pos] << 8) | src[pos + 1];
       const payloadStart = pos + 2;
       const payloadEnd = pos + segLen;
       if (segLen < 2 || payloadEnd > src.length) {
-        throw new Error(`JPEG 區段 0xFF${marker.toString(16).toUpperCase()} 長度異常`);
+        throw new Error(t("errJpegSegLen", { marker: marker.toString(16).toUpperCase() }));
       }
       const payload = src.subarray(payloadStart, payloadEnd);
       pos = payloadEnd;
@@ -585,17 +601,17 @@ export class SuperBandClient {
       } else if (marker === 0xC4) {
         SuperBandClient._validateBadgeDht(payload);
       } else if (marker === 0xDD) {
-        if (payload.length > 512) throw new Error("JPEG DRI 區段超過 512 位元組上限");
+        if (payload.length > 512) throw new Error(t("errJpegDriLen"));
       } else if (marker === 0xDA) {
         if (payload.length > 512 || payload.length < 1 || payload[0] !== 3) {
-          throw new Error("JPEG SOS 標頭不符韌體規範 (需 3 通道且 <= 512B)");
+          throw new Error(t("errJpegSosFmt"));
         }
-        if (!info) throw new Error("JPEG 缺少 SOF0 (Baseline DCT) 區段");
+        if (!info) throw new Error(t("errJpegMissingSof0"));
         const tail = SuperBandClient._sliceScanThroughEoi(src, payloadStart - 4);
         parts.push(tail);
         return SuperBandClient._concatUint8Arrays(parts);
       } else if (marker >= 0xC1 && marker <= 0xCF) {
-        throw new Error(`韌體不支援非 Baseline JPEG 編碼 (0xFF${marker.toString(16).toUpperCase()})`);
+        throw new Error(t("errJpegNonBaseline", { marker: marker.toString(16).toUpperCase() }));
       } else if ((marker >= 0xE1 && marker <= 0xEF) || marker === 0xFE) {
         continue; // 剝除 EXIF/ICC/COM 等冗餘中繼資料以縮減體積
       } else if (marker === 0xE0 && payload.length > 64) {
@@ -605,67 +621,71 @@ export class SuperBandClient {
       parts.push(src.subarray(payloadStart - 4, payloadEnd));
     }
 
-    throw new Error("JPEG 缺少 SOS 掃描區段或 EOI 結尾");
+    throw new Error(t("errJpegMissingSosOrEoi"));
   }
 
   static _validateBadgeSof0(payload) {
     if (payload.length > 512 || payload.length < 6) {
-      throw new Error("JPEG SOF0 區段長度不符韌體規範");
+      throw new Error(t("errJpegSof0Len"));
     }
     const precision = payload[0];
     const height = (payload[1] << 8) | payload[2];
     const width = (payload[3] << 8) | payload[4];
     const numComp = payload[5];
     if (precision !== 8 || numComp !== 3) {
-      throw new Error(`韌體僅支援 8-bit 3 通道 JPEG (目前 ${precision}-bit, ${numComp} 通道)`);
+      throw new Error(t("errJpegUnsupportedFmt", { precision, numComp }));
     }
     if (payload.length < 15) {
-      throw new Error("JPEG SOF0 區段長度不符韌體規範");
+      throw new Error(t("errJpegSof0Len"));
     }
     if (width < 1 || height < 1 || width > 359 || height > 359) {
-      throw new Error(`JPEG 解析度 ${width}x${height} 超出韌體上限 (359x359)`);
+      throw new Error(t("errJpegResLimit", { w: width, h: height }));
     }
     const ySamp = payload[7];
     const cbSamp = payload[10];
     const crSamp = payload[13];
     if (![0x11, 0x12, 0x21, 0x22].includes(ySamp) || cbSamp !== 0x11 || crSamp !== 0x11) {
-      throw new Error(`不支援的色度抽樣格式 (0x${ySamp.toString(16)}/0x${cbSamp.toString(16)}/0x${crSamp.toString(16)})`);
+      throw new Error(t("errJpegSubsampling", {
+        y: ySamp.toString(16),
+        cb: cbSamp.toString(16),
+        cr: crSamp.toString(16),
+      }));
     }
     for (let c = 0; c < 3; c++) {
-      if (payload[8 + c * 3] > 1) throw new Error("JPEG 量化表索引超過韌體支援上限 (0..1)");
+      if (payload[8 + c * 3] > 1) throw new Error(t("errJpegDqtIndex"));
     }
     return { width, height, ySamp };
   }
 
   static _validateBadgeDqt(payload) {
     if (payload.length > 512 || payload.length < 65) {
-      throw new Error("JPEG DQT 量化表區段超過 512B 或長度不足");
+      throw new Error(t("errJpegDqtLen"));
     }
     let off = 0;
     while (off < payload.length) {
-      if (off + 65 > payload.length) throw new Error("JPEG DQT 區段結構不完整");
+      if (off + 65 > payload.length) throw new Error(t("errJpegDqtStruct"));
       const info = payload[off];
-      if ((info & 0xF0) !== 0) throw new Error("韌體僅支援 8-bit JPEG 量化表精度");
-      if ((info & 0x03) > 1) throw new Error("韌體僅支援 JPEG 量化表 ID 0 與 1");
+      if ((info & 0xF0) !== 0) throw new Error(t("errJpegDqtPrecision"));
+      if ((info & 0x03) > 1) throw new Error(t("errJpegDqtId"));
       off += 65;
     }
   }
 
   static _validateBadgeDht(payload) {
     if (payload.length > 512 || payload.length < 17) {
-      throw new Error("JPEG DHT 霍夫曼表區段超過 512B 或長度不足");
+      throw new Error(t("errJpegDhtLen"));
     }
     let off = 0;
     while (off < payload.length) {
-      if (off + 17 > payload.length) throw new Error("JPEG DHT 區段結構不完整");
+      if (off + 17 > payload.length) throw new Error(t("errJpegDhtStruct"));
       const tcTh = payload[off++];
       if ((tcTh & 0xEE) !== 0) {
-        throw new Error(`韌體不支援的 JPEG 霍夫曼表類別/索引 0x${tcTh.toString(16)}`);
+        throw new Error(t("errJpegDhtId", { tcTh: tcTh.toString(16) }));
       }
       let symCount = 0;
       for (let i = 0; i < 16; i++) symCount += payload[off + i];
       off += 16 + symCount;
-      if (off > payload.length) throw new Error("JPEG DHT 符號表長度溢位");
+      if (off > payload.length) throw new Error(t("errJpegOverflow"));
     }
   }
 
@@ -676,7 +696,7 @@ export class SuperBandClient {
         return src.subarray(sosStart, i + 2);
       }
     }
-    throw new Error("JPEG 缺少結尾 EOI (0xFFD9)");
+    throw new Error(t("errJpegMissingEoi"));
   }
 
   static _concatUint8Arrays(chunks) {
@@ -712,7 +732,7 @@ export class SuperBandClient {
     let lastBytes = null;
     for (const q of qualities) {
       const blob = await new Promise((resolve) => flatCanvas.toBlob(resolve, "image/jpeg", q));
-      if (!blob) throw new Error("瀏覽器無法將畫布編碼為 JPEG");
+      if (!blob) throw new Error(t("errJpegEncodeFailed"));
       const raw = new Uint8Array(await blob.arrayBuffer());
       lastBytes = SuperBandClient.sanitizeBadgeJpeg(raw);
       if (lastBytes.length <= maxBytes) return lastBytes;
@@ -727,7 +747,7 @@ export class SuperBandClient {
    */
   static buildMjpegAvi(jpegFrames, width, height, fps = 5) {
     if (!Array.isArray(jpegFrames) || jpegFrames.length === 0) {
-      throw new Error("buildMjpegAvi 需要至少 1 個 JPEG 影格");
+      throw new Error(t("errAviNoFrames"));
     }
     const w = Math.max(1, Math.round(width));
     const h = Math.max(1, Math.round(height));
@@ -923,11 +943,11 @@ export class SuperBandClient {
 
   // --- 業務指令：尋找與喚醒徽章 ---
   async findMe() {
-    if (!this.isConnected) throw new Error("尚未連線");
-    this.log("🔔 發送尋找/喚醒徽章指令 (CMD_SETTINGS 18, SUB_FIND_ME 11)...");
+    if (!this.isConnected) throw new Error(t("errNotConnected"));
+    this.log(t("logFindMeCmd"));
     const buf = this.encodeCdFrame(18, 11, new Uint8Array([1]));
     await this.sendRaw(buf);
-    this.log("✨ 喚醒/亮屏指令已送達！");
+    this.log(t("logFindMeAck"));
   }
 
   /**
@@ -944,7 +964,7 @@ export class SuperBandClient {
    * - status = 7 : 設備忙碌或狀態異常 (ERROR_STATE)
    */
   uploadDialImage(rawFileBytes, onProgress = null, options = {}) {
-    if (!this.isConnected) throw new Error("尚未連線");
+    if (!this.isConnected) throw new Error(t("errNotConnected"));
 
     const rawArr = rawFileBytes instanceof Uint8Array ? rawFileBytes : new Uint8Array(rawFileBytes);
     const looksLikeAvi = rawArr.length >= 12 &&
@@ -962,7 +982,13 @@ export class SuperBandClient {
       : (options.custom !== undefined || options.fontPos !== undefined ? undefined : this.activeDialId);
 
     const extLabel = isAvi ? `.avi` : "";
-    this.log(`開始準備傳輸圖像 (檔案大小: ${totalBytes} 位元組, 目標槽位: /bgp_wa${slot}${extLabel}, isAvi=${isAvi}, custom=${isCustom})...`);
+    this.log(t("logPrepareImageTransfer", {
+      totalBytes,
+      slot,
+      ext: extLabel,
+      isAvi,
+      custom: isCustom,
+    }));
 
     const isFatalStatus = (code) => {
       return code === 1 || code === 3 || code === 4 || code === 5 || code === 7;
@@ -970,12 +996,12 @@ export class SuperBandClient {
 
     const getFatalErrorMessage = (code) => {
       switch (code) {
-        case 1: return "徽章數據校驗失敗 (status=1, ERROR_CHECK - 請檢查檔案格式)";
-        case 3: return "徽章電量過低 (<30%) 拒絕傳輸 (status=3, ERROR_BATTERY_LOW)";
-        case 4: return "徽章處於充電保護狀態 (status=4, ERROR_CHARGE_BATTERY)，請先拔除充電線後再上傳";
-        case 5: return "徽章剩餘 Flash 儲存空間不足 (status=5, ERROR_OUT_OF_MEMORY)";
-        case 7: return "徽章內部狀態忙碌或未就緒 (status=7, ERROR_STATE)";
-        default: return `徽章回報異常狀態碼 (status=${code})`;
+        case 1: return t("fatalStatus1");
+        case 3: return t("fatalStatus3");
+        case 4: return t("fatalStatus4");
+        case 5: return t("fatalStatus5");
+        case 7: return t("fatalStatus7");
+        default: return t("fatalStatusDefault", { code });
       }
     };
 
@@ -989,10 +1015,16 @@ export class SuperBandClient {
         dialId,
       });
       const dialIdHex = ((startPayload[0] << 24) | (startPayload[1] << 16) | (startPayload[2] << 8) | startPayload[3]) >>> 0;
+      const dialIdStr = dialIdHex.toString(16).toUpperCase().padStart(8, "0");
 
       const startFrame = this.encodeCdFrame(31, 2, startPayload);
 
-      this.log(`📤 1/3 發送單圖推送啟動握手 (CMD=31 SUB=2, dialId=0x${dialIdHex.toString(16).toUpperCase().padStart(8, "0")}, isAvi=${isAvi}, bitmask=0x${bitmask.toString(16).padStart(2, "0")}, size=${totalBytes}B)...`);
+      this.log(t("logStartHandshake", {
+        dialId: dialIdStr,
+        isAvi,
+        bitmask: bitmask.toString(16).padStart(2, "0"),
+        size: totalBytes,
+      }));
 
       let startAckReceived = false;
 
@@ -1046,13 +1078,13 @@ export class SuperBandClient {
 
       for (let attempt = 1; attempt <= 2; attempt++) {
         if (!this.isConnected || !this.writeChar) {
-          throw new Error("徽章連線已中斷，請重新連接後再試");
+          throw new Error(t("errReconnectRequired"));
         }
 
         const res = await sendStartAndWait(2500);
         if (res.ok) {
           startAckReceived = true;
-          this.log(`🎯 啟動握手成功 (status=${res.status})！徽章螢幕已切換至「手機 ⇄ 徽章」藍色進度條傳輸畫面！`);
+          this.log(t("logStartSuccess", { status: res.status }));
           break;
         }
         if (res.fatalStatus !== undefined) {
@@ -1061,12 +1093,12 @@ export class SuperBandClient {
           throw new Error(errMsg);
         }
         if (attempt < 2) {
-          this.log(`⚠️ 未收到徽章業務啟動確認 (status=1000)，正在重試啟動握手 (第 ${attempt + 1}/2 次)...`);
+          this.log(t("logStartRetry", { next: attempt + 1 }));
         }
       }
 
       if (!startAckReceived) {
-        const errMsg = `徽章未回應啟動確認 (status=1000，dialId=0x${dialIdHex.toString(16).toUpperCase().padStart(8, "0")})，已中止傳輸以免空白發包`;
+        const errMsg = t("errNoStartAck", { dialId: dialIdStr });
         this.log(`❌ ${errMsg}`);
         throw new Error(errMsg);
       }
@@ -1078,7 +1110,7 @@ export class SuperBandClient {
       const totalChunks = Math.ceil(totalBytes / chunkSize);
       const chunkAckTimeoutMs = options.chunkAckTimeoutMs || 2200;
 
-      this.log(`📤 2/3 開始串流檔案分塊 (共 ${totalChunks} 塊，每塊 ${chunkSize}B，採用徽章 Flash ACK 流控)...`);
+      this.log(t("logStartStreaming", { totalChunks, chunkSize }));
 
       const startTime = performance.now();
       this.quietRxLog = true;
@@ -1111,7 +1143,7 @@ export class SuperBandClient {
                 resolvePendingSeq = null;
                 rejectPendingSeq = null;
               }
-              reject(new Error("徽章於傳輸中途斷開連線 (設備可能已重啟或關機)"));
+              reject(new Error(t("errTransferDisconnected")));
             }
           }, 150);
           const onAck = (cur) => {
@@ -1166,7 +1198,7 @@ export class SuperBandClient {
       try {
         for (let seq = 1; seq <= totalChunks; seq++) {
           if (!this.isConnected || !this.writeChar) {
-            throw new Error("徽章於傳輸中途斷開連線 (設備可能已重啟或關機)");
+            throw new Error(t("errTransferDisconnected"));
           }
           if (fatalError) throw fatalError;
 
@@ -1190,7 +1222,7 @@ export class SuperBandClient {
           let acked = false;
           for (let retry = 0; retry <= 2; retry++) {
             if (retry > 0) {
-              this.log(`⚠️ 第 ${seq}/${totalChunks} 塊未及時收到 Flash 確認 (目前已確認至第 ${confirmedSeq} 塊)，正在重發 (第 ${retry}/2 次)...`);
+              this.log(t("logChunkRetry", { seq, totalChunks, confirmed: confirmedSeq, retry }));
             }
             await this.sendRaw(chunkFrame, true);
             const cur = await waitForConfirmedSeq(seq, chunkAckTimeoutMs);
@@ -1202,7 +1234,7 @@ export class SuperBandClient {
           }
 
           if (!acked) {
-            throw new Error(`分塊 ${seq}/${totalChunks} 傳輸逾時，徽章未回傳 Flash 寫入確認 (已確認至 ${confirmedSeq})`);
+            throw new Error(t("errChunkTimeout", { seq, totalChunks, confirmed: confirmedSeq }));
           }
 
           if (seq % 20 === 0) {
@@ -1223,17 +1255,25 @@ export class SuperBandClient {
       }
 
       const elapsedSec = Math.max(0.1, (performance.now() - startTime) / 1000).toFixed(1);
-      this.log(`⚡ 數據分塊已全數送達並獲徽章 Flash 確認 (${confirmedSeq}/${totalChunks} 塊)！耗時 ${elapsedSec} 秒 (平均 ${(totalBytes / 1024 / elapsedSec).toFixed(1)} KB/s)`);
+      this.log(t("logStreamingDone", {
+        confirmed: confirmedSeq,
+        totalChunks,
+        sec: elapsedSec,
+        kbps: (totalBytes / 1024 / elapsedSec).toFixed(1),
+      }));
 
       if (!this.isConnected || !this.writeChar) {
-        throw new Error("徽章於傳輸完成前斷開連線");
+        throw new Error(t("errPreFinishDisconnected"));
       }
 
       // 3. 發送 FINISH 幀 (CMD 31, sub = 3)
       await new Promise(r => setTimeout(r, 150));
 
       const { totalSum, finishPayload } = SuperBandClient.buildDialFinishPayload(fileBytes);
-      this.log(`📤 3/3 發送完成提交指令 (CMD=31 SUB=3, 檔案大小=${totalBytes}B, 總校驗和=0x${totalSum.toString(16).toUpperCase().padStart(8, "0")})...`);
+      this.log(t("logFinishCmd", {
+        totalBytes,
+        sum: totalSum.toString(16).toUpperCase().padStart(8, "0"),
+      }));
 
       const finishFrame = this.encodeCdFrame(31, 3, finishPayload);
 
@@ -1252,11 +1292,15 @@ export class SuperBandClient {
       const finishStatus = this.parseStatus(finishResp);
       if (finishStatus !== null && isFatalStatus(finishStatus)) {
         const errMsg = getFatalErrorMessage(finishStatus);
-        this.log(`❌ Flash 寫入提交失敗: ${errMsg}`);
+        this.log(t("logFinishFailed", { msg: errMsg }));
         throw new Error(errMsg);
       }
 
-      this.log(`🎉 徽章回報業務寫入完成 (status=${finishStatus})！已成功保存至槽位 /bgp_wa${slot}${extLabel}！`);
+      this.log(t("logUploadComplete", {
+        status: finishStatus,
+        slot,
+        ext: extLabel,
+      }));
       return { success: true, status: finishStatus };
     })();
   }

@@ -2,6 +2,8 @@
 
 [繁體中文說明](#繁體中文說明) | [English Documentation](#english-documentation)
 
+![JetBadge Web E-Badge Console Screenshot](docs/screenshot.jpg)
+
 ---
 
 ## 繁體中文說明
@@ -16,7 +18,7 @@
    - 自動讀取標準藍牙裝置資訊（DIS）與電池電量（BAS）。
 2. **即時規格與儲存空間查詢**
    - 讀取徽章硬體螢幕解析度（`CMD=32 SUB=2`，例如 `240 x 240`）與主錶盤 `DialID`（`CMD=32 SUB=5`）。
-   - 透過 `CMD=32 SUB=4` 查詢真實 Flash 剩餘空間（KB），支援傳輸完成後自動更新與手動點擊 **REFRESH** 重新讀取。
+   - 透過 `CMD=32 SUB=4` 查詢真實 Flash 剩餘空間（KB），支援傳輸完成後自動更新與手動點擊 **重新整理 / REFRESH** 重新讀取。
    - 支援 **「🔔 喚醒/尋找」** 指令（`CMD=18 SUB=11`）。
 3. **互動式相片裁切器（JPG / PNG / WebP）**
    - 支援瀏覽選檔或直接拖曳圖片至畫布。
@@ -29,6 +31,9 @@
 5. **穩定傳輸與充電保護即時提醒**
    - 採用 `CMD=31`（每塊 200 Bytes）+ 徽章 Flash ACK 流控（`status = 1000 + seq`）與完整校驗和提交（`CMD=31 SUB=3`）。
    - 若徽章正連接充電線而觸發原廠韌體硬體保護（回報 `status=4 / ERROR_CHARGE_BATTERY`），頁面會立即以非阻塞提示橫幅提醒**先拔除充電線後再上傳**，避免重複重試或阻塞瀏覽器造成藍牙斷線。
+6. **雙語自動偵測與即時切換（繁體中文 / English）**
+   - 進入控制台時依 `?lang=zh|en` 網址參數、`localStorage` 已儲存偏好與瀏覽器語系（`navigator.languages`）自動判斷顯示繁體中文或英文。
+   - 右上角提供 **`中文 / EN`** 分段切換鈕，可即時切換完整介面文字、選單、提示橫幅與 BLE 通訊日誌語言並記住設定。
 
 ---
 
@@ -66,9 +71,11 @@
 
 | 檔案 | 說明 |
 | :--- | :--- |
-| `index.html` | 控制台主介面（連線狀態、圖片裁切器、GIF/MP4 頁籤、進度條與即時日誌） |
-| `app.js` | 前端互動邏輯、Canvas 裁切轉檔、GIF/MP4 影格擷取編碼與狀態橫幅控制 |
+| `index.html` | 控制台主介面（語系切換、連線狀態、圖片裁切器、GIF/MP4 頁籤、進度條與即時日誌） |
+| `app.js` | 前端互動邏輯、自動偵測與即時切換雙語介面、Canvas 裁切轉檔與狀態橫幅控制 |
+| `i18n.js` | 繁體中文／英文雙語字典、初始語系偵測與字串格式化模組 |
 | `baji.js` | `SuperBandClient` BLE 通訊模組（封包編解碼、MJPEG AVI 封裝與分塊 ACK 流控） |
+| `docs/screenshot.jpg` | 控制台實機連線裁切畫面截圖 |
 | `server.py` | Python 內建標準庫本地 HTTP 伺服器（含 `no-cache` 標頭與自動開瀏覽器） |
 | `run.bat` | Windows 一鍵啟動批次檔 |
 
@@ -104,6 +111,9 @@
 5. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**
    - Streams 200-byte chunks (`CMD=31 SUB=1`) synchronized with firmware Flash write ACKs (`status = 1000 + seq`) and full checksum verification (`CMD=31 SUB=3`).
    - Immediately detects firmware charging lock (`status=4 / ERROR_CHARGE_BATTERY`) and displays a non-blocking banner asking to unplug the USB charging cable—avoiding duplicate handshakes or modal `alert()` stalls that drop BLE connections.
+6. **Bilingual UI (`中文 / EN`) with Auto-Detection**
+   - Automatically selects English or Traditional Chinese on startup via `?lang=en|zh` query parameter, saved `localStorage` preference, or browser locale (`navigator.languages`).
+   - Includes a **`中文 / EN`** toggle in the header that switches all labels, controls, notices, and BLE logs live and persists your preference.
 
 ---
 
@@ -133,7 +143,7 @@
 
 3. **Connect & Upload**
    - The script automatically opens your default browser at **`http://localhost:8080`** (automatically picks the next free port if `8080` is busy, with caching disabled).
-   - Click **"搜尋並連接徽章"** (Search & Connect Badge), select your device (e.g., `BG02`), crop or pick your media, and upload!
+   - Click **"Search & Connect Badge"** (or **"搜尋並連接徽章"** in Chinese mode), select your device (e.g., `BG02`), crop or pick your media, and upload!
 
 ---
 
@@ -141,9 +151,11 @@
 
 | File | Purpose |
 | :--- | :--- |
-| `index.html` | Main single-page UI (connection panel, cropper, animation tab, progress & logs) |
-| `app.js` | UI state, canvas cropping, browser-side GIF/MP4-to-AVI transcoding, notice banners |
+| `index.html` | Main single-page UI (language switch, connection panel, cropper, animation tab, progress & logs) |
+| `app.js` | UI state, bilingual detection/switching, canvas cropping, GIF/MP4-to-AVI transcoding, notice banners |
+| `i18n.js` | Traditional Chinese / English localization dictionary, locale auto-detection, and formatter |
 | `baji.js` | `SuperBandClient` Web Bluetooth client, frame codec, MJPEG AVI muxer, chunk ACK flow control |
+| `docs/screenshot.jpg` | Console UI screenshot with connected badge |
 | `server.py` | Zero-dependency Python HTTP server with `no-cache` headers and auto-browser launch |
 | `run.bat` | One-click Windows launcher script |
 

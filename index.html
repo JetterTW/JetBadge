@@ -164,6 +164,34 @@
       cursor: not-allowed;
     }
 
+    .lang-switch {
+      display: inline-flex;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 2px;
+      gap: 2px;
+    }
+    .lang-btn {
+      background: transparent;
+      color: var(--text-muted);
+      border: none;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .lang-btn:hover:not(:disabled) {
+      background: rgba(148, 163, 184, 0.14);
+      color: var(--text);
+      transform: none;
+    }
+    .lang-btn.active {
+      background: var(--primary);
+      color: #ffffff;
+    }
+
     .btn-group {
       display: flex;
       gap: 8px;
@@ -459,64 +487,68 @@
     <header>
       <div>
         <h1>
-          <span>⚡ 電子徽章 (JetBadge) 管理控制台</span>
+          <span data-i18n="headerTitle">⚡ 電子徽章 (JetBadge) 管理控制台</span>
         </h1>
-        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+        <p data-i18n="headerSubtitle" style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
           直接透過瀏覽器 Web Bluetooth 連線，支援相片裁切、GIF 動畫、MP4 影片上傳與圖像管理
         </p>
       </div>
-      <div style="display: flex; align-items: center; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <div class="lang-switch" role="group" aria-label="Language switch">
+          <button id="btnLangZh" type="button" class="lang-btn active" aria-pressed="true">中文</button>
+          <button id="btnLangEn" type="button" class="lang-btn" aria-pressed="false">EN</button>
+        </div>
         <div id="connStatus" class="badge-status">
           <span class="status-dot"></span>
           <span id="connStatusText">未連線</span>
         </div>
-        <button id="btnConnect">搜尋並連接徽章</button>
-        <button id="btnDisconnect" class="btn-outline" disabled>中斷連線</button>
+        <button id="btnConnect" data-i18n="btnConnect">搜尋並連接徽章</button>
+        <button id="btnDisconnect" class="btn-outline" data-i18n="btnDisconnect" disabled>中斷連線</button>
       </div>
     </header>
 
     <!-- 設備連線與硬體資訊卡片 -->
     <div class="card">
       <div class="card-title">
-        <span>設備資訊與規格</span>
+        <span data-i18n="cardDeviceTitle">設備資訊與規格</span>
         <div style="display: flex; gap: 6px;">
-          <button id="btnFindMe" class="btn-outline" style="padding: 4px 10px; font-size: 12px;" disabled>🔔 喚醒/尋找</button>
-          <button id="btnRefreshInfo" class="btn-outline" style="padding: 4px 10px; font-size: 12px;" disabled>讀取資訊</button>
+          <button id="btnFindMe" class="btn-outline" data-i18n="btnFindMe" style="padding: 4px 10px; font-size: 12px;" disabled>🔔 喚醒/尋找</button>
+          <button id="btnRefreshInfo" class="btn-outline" data-i18n="btnRefreshInfo" style="padding: 4px 10px; font-size: 12px;" disabled>讀取資訊</button>
         </div>
       </div>
 
       <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
         <label class="checkbox-label">
           <input type="checkbox" id="chkAllDevices" checked />
-          搜尋附近全部藍牙設備（若徽章未廣播 Service UUID 請勾選）
+          <span data-i18n="chkAllDevicesLabel">搜尋附近全部藍牙設備（若徽章未廣播 Service UUID 請勾選）</span>
         </label>
       </div>
 
       <div class="info-list">
         <div class="info-item">
-          <div class="info-label">設備名稱</div>
+          <div class="info-label" data-i18n="labelDeviceName">設備名稱</div>
           <div class="info-val" id="infoName">-</div>
         </div>
         <div class="info-item">
-          <div class="info-label">螢幕規格 / 解析度</div>
+          <div class="info-label" data-i18n="labelResolution">螢幕規格 / 解析度</div>
           <div class="info-val" id="infoResolution">-</div>
         </div>
         <div class="info-item">
-          <div class="info-label">通訊 Profile</div>
+          <div class="info-label" data-i18n="labelProfile">通訊 Profile</div>
           <div class="info-val" id="infoProfile">-</div>
         </div>
         <div class="info-item">
-          <div class="info-label">韌體與協定版本</div>
+          <div class="info-label" data-i18n="labelVersion">韌體與協定版本</div>
           <div class="info-val" id="infoVersion">-</div>
         </div>
       </div>
 
       <div class="storage-bar-container">
         <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
-          <span style="color: var(--text-muted);">Device remaining space:</span>
+          <span data-i18n="labelRemainingSpace" style="color: var(--text-muted);">徽章剩餘可用空間:</span>
           <div style="display: flex; align-items: center; gap: 8px;">
             <strong id="infoStorageText" style="color: var(--accent); font-size: 14px;">-</strong>
-            <button id="btnRefreshSpace" class="btn-refresh-pill" disabled>REFRESH</button>
+            <button id="btnRefreshSpace" class="btn-refresh-pill" data-i18n="btnRefreshSpace" disabled>重新整理</button>
           </div>
         </div>
         <div class="storage-progress">
@@ -528,8 +560,8 @@
     <!-- 媒體編輯與上傳區域 -->
     <div class="card">
       <div class="tab-header">
-        <button class="tab-btn active" data-tab="tab-photo">📸 相片裁切與上傳 (JPG/PNG)</button>
-        <button class="tab-btn" data-tab="tab-video">🎬 GIF 動畫 / MP4 影片上傳</button>
+        <button class="tab-btn active" data-tab="tab-photo" data-i18n="tabPhoto">📸 相片裁切與上傳 (JPG/PNG)</button>
+        <button class="tab-btn" data-tab="tab-video" data-i18n="tabVideo">🎬 GIF 動畫 / MP4 影片上傳</button>
       </div>
 
       <div id="uploadNotice" class="notice-banner" role="status" aria-live="polite">
@@ -537,7 +569,7 @@
           <div id="uploadNoticeTitle" class="notice-title"></div>
           <div id="uploadNoticeBody" class="notice-body"></div>
         </div>
-        <button id="btnCloseNotice" type="button" class="notice-close" title="關閉提示">✕</button>
+        <button id="btnCloseNotice" type="button" class="notice-close" data-i18n-title="btnCloseNoticeTitle" title="關閉提示">✕</button>
       </div>
 
       <!-- Tab 1: 照片與裁切 -->
@@ -548,22 +580,22 @@
             <div class="cropper-box" id="dropArea">
               <canvas id="cropCanvas" width="240" height="240"></canvas>
               <div class="dropzone-tip" id="dropTip">
-                點擊下方按鈕或拖曳圖片 (JPG/PNG) 至此處<br>
-                支援滑鼠滾輪縮放、按住拖曳調整構圖
+                <span data-i18n="dropTipLine1">點擊下方按鈕或拖曳圖片 (JPG/PNG) 至此處</span><br>
+                <span data-i18n="dropTipLine2">支援滑鼠滾輪縮放、按住拖曳調整構圖</span>
               </div>
             </div>
 
             <!-- 控制滑桿 -->
             <div class="cropper-tools">
               <div class="slider-group">
-                <span>縮放:</span>
+                <span data-i18n="labelZoom">縮放:</span>
                 <input type="range" id="zoomRange" min="0.2" max="3.0" step="0.05" value="1.0">
                 <span id="zoomVal">100%</span>
               </div>
               <div class="btn-group">
-                <button id="btnRotateLeft" class="btn-outline" style="padding: 6px 10px;" title="向左旋轉90度">↺ 90°</button>
-                <button id="btnRotateRight" class="btn-outline" style="padding: 6px 10px;" title="向右旋轉90度">↻ 90°</button>
-                <button id="btnResetCrop" class="btn-outline" style="padding: 6px 10px;">重設</button>
+                <button id="btnRotateLeft" class="btn-outline" style="padding: 6px 10px;" data-i18n-title="btnRotateLeftTitle" title="向左旋轉90度">↺ 90°</button>
+                <button id="btnRotateRight" class="btn-outline" style="padding: 6px 10px;" data-i18n-title="btnRotateRightTitle" title="向右旋轉90度">↻ 90°</button>
+                <button id="btnResetCrop" class="btn-outline" style="padding: 6px 10px;" data-i18n="btnResetCrop">重設</button>
               </div>
             </div>
           </div>
@@ -571,63 +603,63 @@
           <!-- 參數與上傳設定 -->
           <div>
             <div class="form-group">
-              <label>選擇或更換圖片檔案</label>
+              <label data-i18n="labelSelectPhoto">選擇或更換圖片檔案</label>
               <input type="file" id="fileImageInput" accept="image/jpeg,image/png,image/webp" style="display: none;" />
-              <button id="btnSelectFile" class="btn-outline" style="width: 100%; justify-content: center;">
+              <button id="btnSelectFile" class="btn-outline" data-i18n="btnSelectFile" style="width: 100%; justify-content: center;">
                 📂 瀏覽電腦中的圖片 (JPG/PNG)
               </button>
             </div>
 
             <div class="form-group">
-              <label>徽章裁切遮罩形狀</label>
+              <label data-i18n="labelCropShape">徽章裁切遮罩形狀</label>
               <select id="selCropShape">
-                <option value="circle">圓形徽章 (圓形電子吧唧，預覽外圍半透明黑遮罩)</option>
-                <option value="square">方形徽章 (方形/矩形螢幕)</option>
+                <option value="circle" data-i18n="optCircleMask">圓形徽章 (圓形電子吧唧，預覽外圍半透明黑遮罩)</option>
+                <option value="square" data-i18n="optSquareMask">方形徽章 (方形/矩形螢幕)</option>
               </select>
             </div>
 
             <div class="grid-2" style="gap: 12px;">
               <div class="form-group">
-                <label>目標輸出寬高 (像素)</label>
+                <label data-i18n="labelTargetRes">目標輸出寬高 (像素)</label>
                 <select id="selResolution">
-                  <option value="240x240" selected>240 x 240 (標準圓形/方形吧唧)</option>
-                  <option value="360x360">360 x 360 (高解析圓形吧唧)</option>
-                  <option value="240x280">240 x 280 (長方形螢幕)</option>
-                  <option value="128x128">128 x 128 (小尺寸點陣)</option>
+                  <option value="240x240" selected data-i18n="optRes240x240">240 x 240 (標準圓形/方形吧唧)</option>
+                  <option value="360x360" data-i18n="optRes360x360">360 x 360 (高解析圓形吧唧)</option>
+                  <option value="240x280" data-i18n="optRes240x280">240 x 280 (長方形螢幕)</option>
+                  <option value="128x128" data-i18n="optRes128x128">128 x 128 (小尺寸點陣)</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>影像編碼格式</label>
+                <label data-i18n="labelFormat">影像編碼格式</label>
                 <select id="selFormat">
-                  <option value="avi" selected>MJPEG AVI 封裝 (BG02 /bgp_wa0.avi 原生顯示格式)</option>
-                  <option value="jpeg">Baseline JPEG 靜態圖 (isAvi=0，僅供測試)</option>
-                  <option value="rgb565">RGB565 原生點陣 (isAvi=0，115.2 KB，僅供測試)</option>
+                  <option value="avi" selected data-i18n="optFmtAvi">MJPEG AVI 封裝 (BG02 /bgp_wa0.avi 原生顯示格式)</option>
+                  <option value="jpeg" data-i18n="optFmtJpeg">Baseline JPEG 靜態圖 (isAvi=0，僅供測試)</option>
+                  <option value="rgb565" data-i18n="optFmtRgb565">RGB565 原生點陣 (isAvi=0，115.2 KB，僅供測試)</option>
                 </select>
               </div>
             </div>
 
             <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 13px;">
               <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: var(--text-muted);">Selected image size:</span>
+                <span data-i18n="labelSelectedImageSize" style="color: var(--text-muted);">已選影像大小:</span>
                 <strong id="selectedImageSize" style="color: #38bdf8;">-</strong>
               </div>
               <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
-                <span style="color: var(--text-muted);">Device remaining space:</span>
+                <span data-i18n="labelRemainingSpace" style="color: var(--text-muted);">徽章剩餘可用空間:</span>
                 <strong id="deviceRemainingSpace" style="color: var(--accent);">-</strong>
               </div>
               <div style="display: flex; justify-content: space-between;">
-                <span style="color: var(--text-muted);">裁切輸出解析度:</span>
+                <span data-i18n="labelCropOutputRes" style="color: var(--text-muted);">裁切輸出解析度:</span>
                 <span id="previewDimensions">240 x 240 px</span>
                 <span id="previewFileSize" style="display: none;">-</span>
               </div>
             </div>
 
             <div class="form-group">
-              <label>上傳相片名稱</label>
-              <input type="text" id="txtPhotoName" value="photo_01" placeholder="例如：my_badge" />
+              <label data-i18n="labelPhotoName">上傳相片名稱</label>
+              <input type="text" id="txtPhotoName" value="photo_01" data-i18n-placeholder="placeholderPhotoName" placeholder="例如：my_badge" />
             </div>
 
-            <button id="btnUploadCropped" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;" disabled>
+            <button id="btnUploadCropped" data-i18n="btnUploadCropped" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;" disabled>
               🚀 裁切並立即上傳至徽章
             </button>
           </div>
@@ -639,27 +671,27 @@
         <div class="grid-2">
           <div>
             <div class="form-group">
-              <label>選擇 GIF 動態圖 或 MP4 影片檔案</label>
+              <label data-i18n="labelSelectMedia">選擇 GIF 動態圖 或 MP4 影片檔案</label>
               <input type="file" id="fileMediaInput" accept="image/gif,video/mp4,video/webm,.avi,video/x-msvideo" style="display: none;" />
-              <button id="btnSelectMedia" class="btn-outline" style="width: 100%; justify-content: center;">
+              <button id="btnSelectMedia" class="btn-outline" data-i18n="btnSelectMedia" style="width: 100%; justify-content: center;">
                 🎞️ 瀏覽 GIF 動畫 / MP4 影片
               </button>
             </div>
 
             <div class="form-group">
-              <label>上傳檔名</label>
+              <label data-i18n="labelMediaName">上傳檔名</label>
               <input type="text" id="txtMediaName" value="anim_01" />
             </div>
 
             <div class="form-group">
-              <label>傳輸模式</label>
+              <label data-i18n="labelMediaMode">傳輸模式</label>
               <select id="selMediaType">
-                <option value="ANIMATION">ANIMATION (適用 GIF 動態圖片)</option>
-                <option value="VIDEO">VIDEO (適用 MP4 短影片)</option>
+                <option value="ANIMATION" data-i18n="optModeAnimation">ANIMATION (適用 GIF 動態圖片)</option>
+                <option value="VIDEO" data-i18n="optModeVideo">VIDEO (適用 MP4 短影片)</option>
               </select>
             </div>
 
-            <button id="btnUploadMedia" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;" disabled>
+            <button id="btnUploadMedia" data-i18n="btnUploadMedia" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;" disabled>
               🚀 上傳動畫/影片至徽章
             </button>
           </div>
@@ -667,7 +699,7 @@
           <!-- 媒體預覽區 -->
           <div style="background: #090d16; border: 1px solid var(--card-border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 240px;">
             <div id="mediaPreviewContainer" style="max-width: 100%; max-height: 260px; display: flex; align-items: center; justify-content: center;">
-              <span style="color: var(--text-muted); font-size: 13px;">尚未選取檔案預覽</span>
+              <span data-i18n="mediaPreviewEmpty" style="color: var(--text-muted); font-size: 13px;">尚未選取檔案預覽</span>
             </div>
             <div id="mediaDetails" style="font-size: 12px; color: var(--text-muted); margin-top: 10px;"></div>
           </div>
@@ -677,25 +709,25 @@
 
     <!-- 傳輸進度與即時日誌 -->
     <div class="card">
-      <div class="card-title">傳輸進度與 BLE 通訊日誌</div>
+      <div class="card-title" data-i18n="cardProgressTitle">傳輸進度與 BLE 通訊日誌</div>
 
       <div class="progress-bar-wrap" id="progressWrap" style="display: none;">
         <div class="progress-bar">
           <div class="progress-bar-fill" id="progressFill"></div>
         </div>
         <div class="progress-text">
-          <span id="progressStatusText">準備傳輸...</span>
+          <span id="progressStatusText" data-i18n="progressReady">準備傳輸...</span>
           <span id="progressBytesText">0 / 0 KB (0%)</span>
         </div>
       </div>
 
       <div id="logBox"></div>
       <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
-        <button id="btnClearLog" class="btn-outline" style="padding: 4px 10px; font-size: 12px;">清除記錄</button>
+        <button id="btnClearLog" class="btn-outline" data-i18n="btnClearLog" style="padding: 4px 10px; font-size: 12px;">清除記錄</button>
       </div>
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=33"></script>
+  <script type="module" src="./app.js?v=34"></script>
 </body>
 </html>

@@ -1,4 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=33";
+import { SuperBandClient } from "./baji.js?v=34";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=34";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -10,6 +11,8 @@ const $btnDisconnect = $("btnDisconnect");
 const $btnRefreshInfo = $("btnRefreshInfo");
 const $btnFindMe = $("btnFindMe");
 const $chkAllDevices = $("chkAllDevices");
+const $btnLangZh = $("btnLangZh");
+const $btnLangEn = $("btnLangEn");
 
 // 設備資訊
 const $infoName = $("infoName");
@@ -62,16 +65,30 @@ const $uploadNoticeTitle = $("uploadNoticeTitle");
 const $uploadNoticeBody = $("uploadNoticeBody");
 const $btnCloseNotice = $("btnCloseNotice");
 
+let lastConnState = { connected: false, deviceName: "", profileName: "", profileKey: null };
+let lastDeviceInfo = null;
+let lastNoticeState = null;
+
 function hideNotice() {
+  lastNoticeState = null;
   if (!$uploadNotice) return;
   $uploadNotice.className = "notice-banner";
 }
 
-function showNotice(kind, title, detail = "") {
-  if (!$uploadNotice || !$uploadNoticeTitle || !$uploadNoticeBody) return;
-  $uploadNotice.className = `notice-banner visible ${kind}`;
-  $uploadNoticeTitle.textContent = title;
-  $uploadNoticeBody.textContent = detail;
+function renderNotice(state) {
+  if (!state || !$uploadNotice || !$uploadNoticeTitle || !$uploadNoticeBody) return;
+  $uploadNotice.className = `notice-banner visible ${state.kind}`;
+  $uploadNoticeTitle.textContent = state.titleKey
+    ? t(state.titleKey, state.titleParams || {})
+    : (state.rawTitle || "");
+  $uploadNoticeBody.textContent = state.bodyKey
+    ? t(state.bodyKey, state.bodyParams || {})
+    : (state.rawBody || "");
+}
+
+function showNotice(kind, opts = {}) {
+  lastNoticeState = { kind, ...opts };
+  renderNotice(lastNoticeState);
 }
 
 if ($btnCloseNotice) {
@@ -88,10 +105,14 @@ function log(msg) {
 
 // 捕獲未處理的全域 JavaScript 錯誤並印在日誌面板
 window.addEventListener("error", (e) => {
-  log(`⚠️ 腳本執行錯誤: ${e.message} (${e.filename?.split("/").pop()}:${e.lineno})`);
+  log(t("logScriptError", {
+    msg: e.message,
+    file: e.filename?.split("/").pop() || "",
+    line: e.lineno || 0,
+  }));
 });
 window.addEventListener("unhandledrejection", (e) => {
-  log(`⚠️ 非同步未捕捉錯誤: ${e.reason?.message || e.reason}`);
+  log(t("logUnhandledRejection", { reason: e.reason?.message || e.reason }));
 });
 
 $btnClearLog.addEventListener("click", () => {
@@ -101,7 +122,7 @@ $btnClearLog.addEventListener("click", () => {
 // 初始化 SuperBand BLE 客戶端
 const client = new SuperBandClient(log);
 client.onDisconnected = () => {
-  log("藍牙設備已離線，UI 狀態已重設為未連線");
+  log(t("logBleDisconnected"));
   updateUIConnectionState(false);
 };
 
@@ -113,8 +134,14 @@ let observedTotalFlashKb = 0;
 // ==========================================
 function updateUIConnectionState(connected, info = null) {
   if (connected) {
+    lastConnState = {
+      connected: true,
+      deviceName: info?.deviceName || "SuperBand",
+      profileName: info?.profileName || "",
+      profileKey: info?.profileKey || null,
+    };
     $connStatus.classList.add("connected");
-    $connStatusText.textContent = `已連線: ${info?.deviceName || "SuperBand"}`;
+    $connStatusText.textContent = t("statusConnected", { name: lastConnState.deviceName });
     $btnConnect.disabled = true;
     $btnDisconnect.disabled = false;
     $btnRefreshInfo.disabled = false;
@@ -123,8 +150,10 @@ function updateUIConnectionState(connected, info = null) {
     $btnUploadMedia.disabled = false;
     if ($btnRefreshSpace) $btnRefreshSpace.disabled = false;
   } else {
+    lastConnState = { connected: false, deviceName: "", profileName: "", profileKey: null };
+    lastDeviceInfo = null;
     $connStatus.classList.remove("connected");
-    $connStatusText.textContent = "未連線";
+    $connStatusText.textContent = t("statusDisconnected");
     $btnConnect.disabled = false;
     $btnDisconnect.disabled = true;
     $btnRefreshInfo.disabled = true;
@@ -149,12 +178,12 @@ $btnConnect.addEventListener("click", async () => {
     const acceptAll = $chkAllDevices.checked;
     const res = await client.connect(acceptAll);
     updateUIConnectionState(true, res);
-    $infoProfile.textContent = res.profileName;
+    $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
 
     // 自動讀取設備資訊與剩餘空間
     await refreshDeviceInfo();
   } catch (err) {
-    log(`連線失敗: ${err.message}`);
+    log(t("logConnectFailed", { msg: err.message }));
     updateUIConnectionState(false);
   }
 });
@@ -162,9 +191,9 @@ $btnConnect.addEventListener("click", async () => {
 $btnDisconnect.addEventListener("click", async () => {
   try {
     await client.disconnect();
-    log("已手動斷開連線");
+    log(t("logManualDisconnect"));
   } catch (err) {
-    log(`中斷連線異常: ${err.message}`);
+    log(t("logDisconnectError", { msg: err.message }));
   } finally {
     updateUIConnectionState(false);
   }
@@ -200,7 +229,7 @@ async function refreshStorageSpace() {
     const freeKb = await client.getRemainingSpace();
     updateStorageDisplay(freeKb);
   } catch (err) {
-    log(`讀取剩餘空間失敗: ${err.message}`);
+    log(t("logReadSpaceFailed", { msg: err.message }));
   } finally {
     if ($btnRefreshSpace) $btnRefreshSpace.disabled = !client.isConnected;
   }
@@ -213,9 +242,13 @@ if ($btnRefreshSpace) {
 async function refreshDeviceInfo() {
   try {
     const info = await client.getDeviceInfo();
+    lastDeviceInfo = info;
     $infoName.textContent = info.deviceName;
     $infoResolution.textContent = info.detectedResolution;
-    $infoVersion.textContent = `韌體 ${info.deviceVersion || "v1.0"} / 協定 ${info.protocolVersion || "v1"}`;
+    $infoVersion.textContent = t("versionFormat", {
+      fw: info.deviceVersion || "v1.0",
+      proto: info.protocolVersion || "v1",
+    });
 
     updateStorageDisplay(info.freeStorageKb);
 
@@ -229,7 +262,7 @@ async function refreshDeviceInfo() {
     }
     updateCropTargetResolution();
   } catch (err) {
-    log(`讀取設備資訊失敗: ${err.message}`);
+    log(t("logReadInfoFailed", { msg: err.message }));
   }
 }
 
@@ -238,7 +271,7 @@ $btnFindMe.addEventListener("click", async () => {
   try {
     await client.findMe();
   } catch (err) {
-    log(`尋找/喚醒徽章失敗: ${err.message}`);
+    log(t("logFindMeFailed", { msg: err.message }));
   }
 });
 
@@ -380,7 +413,7 @@ let currentObjectUrl = null;
 
 function loadFileIntoCropper(file) {
   if (!file) return;
-  log(`📸 正在載入圖片檔案: ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`);
+  log(t("logLoadingImage", { name: file.name, sizeKb: (file.size / 1024).toFixed(1) }));
   try {
     if (currentObjectUrl) {
       try { URL.revokeObjectURL(currentObjectUrl); } catch (_) {}
@@ -393,19 +426,19 @@ function loadFileIntoCropper(file) {
           $txtPhotoName.value = file.name.replace(/\.[^/.]+$/, "");
         }
         initImageToCrop(img);
-        log(`✅ 圖片 ${file.name} 載入成功 (${img.naturalWidth} x ${img.naturalHeight})！可在上方滑鼠拖曳/縮放調整構圖。`);
+        log(t("logImageLoaded", { name: file.name, w: img.naturalWidth, h: img.naturalHeight }));
       } catch (err) {
-        log(`❌ 圖片初始化異常: ${err.message}`);
+        log(t("logImageInitError", { msg: err.message }));
         console.error(err);
       }
     };
     img.onerror = () => {
-      log(`❌ 圖片解析失敗，請確認檔案格式是否受瀏覽器支援。`);
-      showNotice("error", "圖片解析失敗", "請選擇有效的 JPG、PNG 或 WebP 圖檔！");
+      log(t("logImageParseError"));
+      showNotice("error", { titleKey: "noticeImageParseTitle", bodyKey: "noticeImageParseBody" });
     };
     img.src = currentObjectUrl;
   } catch (err) {
-    log(`❌ 載入圖片失敗: ${err.message}`);
+    log(t("logLoadImageFailed", { msg: err.message }));
   }
 }
 
@@ -446,7 +479,7 @@ $dropArea.addEventListener("drop", (e) => {
   if (file) {
     loadFileIntoCropper(file);
   } else {
-    log("⚠️ 拖入的項目非有效檔案。");
+    log(t("logInvalidDropFile"));
   }
 });
 
@@ -532,7 +565,7 @@ function updateEstimatedFileSize() {
     const bytes = cropState.targetW * cropState.targetH * 2;
     const kbStr = `${(bytes / 1024).toFixed(2)} KB`;
     if ($selectedImageSize) $selectedImageSize.textContent = kbStr;
-    if ($previewFileSize) $previewFileSize.textContent = `${kbStr} (RGB565 原生未壓縮點陣)`;
+    if ($previewFileSize) $previewFileSize.textContent = t("sizeRgb565Note", { kb: kbStr });
     return;
   }
 
@@ -547,11 +580,11 @@ function updateEstimatedFileSize() {
       if (gen !== estimateGeneration || !currentImg) return;
       const kbStr = `${(encoded.length / 1024).toFixed(2)} KB`;
       const chunks = Math.ceil((encoded.length + 4) / 200);
-      if ($selectedImageSize) $selectedImageSize.textContent = `${kbStr} (約 ${chunks} 塊)`;
+      if ($selectedImageSize) $selectedImageSize.textContent = t("sizeChunks", { kb: kbStr, chunks });
       if ($previewFileSize) $previewFileSize.textContent = `${kbStr} (${format === "avi" ? "MJPEG AVI" : "Baseline JPEG"})`;
     } catch {
       if (gen === estimateGeneration && $selectedImageSize) {
-        $selectedImageSize.textContent = "估算失敗";
+        $selectedImageSize.textContent = t("sizeEstimateFailed");
       }
     }
   }, 120);
@@ -596,11 +629,11 @@ function getCroppedCanvas() {
 $btnUploadCropped.addEventListener("click", async () => {
   hideNotice();
   if (!client.isConnected) {
-    showNotice("warn", "尚未連線至徽章", "請先點擊上方「搜尋並連接徽章」。");
+    showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodyPhoto" });
     return;
   }
   if (!currentImg) {
-    showNotice("warn", "尚未選取相片", "請先選擇或拖入一張相片！");
+    showNotice("warn", { titleKey: "noticeNoPhotoTitle", bodyKey: "noticeNoPhotoBody" });
     return;
   }
 
@@ -613,34 +646,47 @@ $btnUploadCropped.addEventListener("click", async () => {
     let bytes;
     let isAvi = 1;
     if (format === "avi") {
-      showProgress(true, "正在處理相片 (MJPEG AVI 轉碼與封裝)...");
+      showProgress(true, t("progressEncodingAvi"));
       bytes = await client.canvasToBadgeAvi(outCanvas, { quality: 0.90, maxBytes: 96 * 1024, fps: 5 });
       isAvi = 1;
-      log(`準備傳輸 MJPEG AVI (${outCanvas.width}x${outCanvas.height}, ${bytes.length} 位元組, 含 4B 標頭共 ${bytes.length + 4}B)...`);
+      log(t("logPrepareAvi", {
+        w: outCanvas.width,
+        h: outCanvas.height,
+        bytes: bytes.length,
+        totalBytes: bytes.length + 4,
+      }));
     } else if (format === "jpeg") {
-      showProgress(true, "正在處理相片 (Baseline JPEG 轉碼)...");
+      showProgress(true, t("progressEncodingJpeg"));
       bytes = await client.canvasToBadgeJpeg(outCanvas, { quality: 0.90, maxBytes: 96 * 1024 });
       isAvi = 0;
-      log(`⚠️ 準備傳輸 Baseline JPEG (static isAvi=0, ${bytes.length}B) — 注意 BG02 韌體預設僅對 .avi (isAvi=1) 啟用解碼顯示`);
+      log(t("logPrepareJpeg", { bytes: bytes.length }));
     } else {
-      showProgress(true, "正在處理相片 (RGB565 原生點陣)...");
+      showProgress(true, t("progressEncodingRgb565"));
       bytes = client.canvasToRgb565(outCanvas);
       isAvi = 0;
-      log(`⚠️ 準備傳輸 RGB565 原生點陣 (${outCanvas.width}x${outCanvas.height}, ${bytes.length}B, isAvi=0)`);
+      log(t("logPrepareRgb565", {
+        w: outCanvas.width,
+        h: outCanvas.height,
+        bytes: bytes.length,
+      }));
     }
 
-    log(`🚀 開始向徽章發送啟動指令 (固定儲存槽位: Slot ${slot} /bgp_wa${slot}${isAvi ? ".avi" : ""}, isAvi=${isAvi}, custom=0)...`);
+    log(t("logPhotoUploadStart", {
+      slot,
+      ext: isAvi ? ".avi" : "",
+      isAvi,
+    }));
     await client.uploadDialImage(bytes, (sent, total, pct) => {
-      updateProgress(sent, total, pct, `正在傳輸至徽章 (進度: ${pct}%)...`);
+      updateProgress(sent, total, pct, t("progressUploadingPhoto", { pct }));
     }, { slot, isAvi, custom: 0, dialId: client.activeDialId, fontPos: 0 });
 
     showProgress(false);
-    log("🎉 圖像已成功寫入徽章 Flash (UPLOAD SUCCESS)！");
+    log(t("logPhotoUploadSuccess"));
     await refreshStorageSpace();
-    showNotice("success", "🎉 相片已成功寫入徽章！", "徽章螢幕現已退出傳輸狀態並更新顯示！");
+    showNotice("success", { titleKey: "noticePhotoSuccessTitle", bodyKey: "noticePhotoSuccessBody" });
   } catch (err) {
-    log(`相片上傳失敗: ${err.message}`);
-    showNotice("error", "相片上傳失敗", err.message);
+    log(t("logPhotoUploadFailed", { msg: err.message }));
+    showNotice("error", { titleKey: "noticePhotoFailedTitle", rawBody: err.message });
   } finally {
     $btnUploadCropped.disabled = false;
     showProgress(false);
@@ -651,6 +697,7 @@ $btnUploadCropped.addEventListener("click", async () => {
 // 5. GIF 動態圖 / MP4 影片 / AVI 動畫上傳
 // ==========================================
 let currentMediaFile = null;
+let lastMediaState = { selected: false, name: "", sizeMb: "", type: "", isAvi: false };
 
 $btnSelectMedia.addEventListener("click", () => $fileMediaInput.click());
 
@@ -661,19 +708,55 @@ $fileMediaInput.addEventListener("change", (e) => {
   $txtMediaName.value = file.name.replace(/\.[^/.]+$/, "");
 
   const lower = file.name.toLowerCase();
+  const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
+  const typeLabel = file.type || "application/octet-stream";
+  let isAvi = false;
+
   if (file.type.includes("gif") || lower.endsWith(".gif")) {
     $selMediaType.value = "ANIMATION";
-    $mediaPreviewContainer.innerHTML = `<img src="${URL.createObjectURL(file)}" class="preview-thumbnail" style="width: 180px; height: 180px; object-fit: contain;" />`;
+    $mediaPreviewContainer.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.className = "preview-thumbnail";
+    img.style.width = "180px";
+    img.style.height = "180px";
+    img.style.objectFit = "contain";
+    $mediaPreviewContainer.appendChild(img);
   } else if (file.type.includes("video") || lower.endsWith(".mp4") || lower.endsWith(".webm")) {
     $selMediaType.value = "VIDEO";
-    $mediaPreviewContainer.innerHTML = `<video src="${URL.createObjectURL(file)}" autoplay loop muted style="max-width: 220px; max-height: 200px; border-radius: 8px;"></video>`;
+    $mediaPreviewContainer.innerHTML = "";
+    const vid = document.createElement("video");
+    vid.src = URL.createObjectURL(file);
+    vid.autoplay = true;
+    vid.loop = true;
+    vid.muted = true;
+    vid.style.maxWidth = "220px";
+    vid.style.maxHeight = "200px";
+    vid.style.borderRadius = "8px";
+    $mediaPreviewContainer.appendChild(vid);
   } else if (lower.endsWith(".avi")) {
     $selMediaType.value = "VIDEO";
-    $mediaPreviewContainer.innerHTML = `<span style="color: #38bdf8; font-size: 13px;">🎞️ 已選取原生 AVI 動畫檔案：${file.name}</span>`;
+    isAvi = true;
+    $mediaPreviewContainer.innerHTML = "";
+    const span = document.createElement("span");
+    span.style.color = "#38bdf8";
+    span.style.fontSize = "13px";
+    span.textContent = t("mediaPreviewAvi", { name: file.name });
+    $mediaPreviewContainer.appendChild(span);
   }
 
-  const sizeMb = (file.size / (1024 * 1024)).toFixed(2);
-  $mediaDetails.textContent = `檔案: ${file.name} | 大小: ${sizeMb} MB | 類型: ${file.type || "application/octet-stream"}`;
+  lastMediaState = {
+    selected: true,
+    name: file.name,
+    sizeMb,
+    type: typeLabel,
+    isAvi,
+  };
+  $mediaDetails.textContent = t("mediaDetailsFmt", {
+    name: file.name,
+    sizeMb,
+    type: typeLabel,
+  });
 });
 
 function drawSourceCoverToBadgeCanvas(source, srcW, srcH, targetW, targetH) {
@@ -727,7 +810,7 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
       const img = await new Promise((resolve, reject) => {
         const el = new Image();
         el.onload = () => resolve(el);
-        el.onerror = () => reject(new Error("無法載入 GIF 檔案"));
+        el.onerror = () => reject(new Error(t("errGifLoadFailed")));
         el.src = imgUrl;
       });
       canvases.push(drawSourceCoverToBadgeCanvas(img, img.naturalWidth || targetW, img.naturalHeight || targetH, targetW, targetH));
@@ -744,15 +827,15 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
     try {
       await new Promise((resolve, reject) => {
         video.onloadeddata = resolve;
-        video.onerror = () => reject(new Error("瀏覽器無法解碼此影片檔案"));
+        video.onerror = () => reject(new Error(t("errVideoDecodeFailed")));
       });
       const duration = Math.max(0.2, Math.min(4.0, video.duration || 2.0));
       const count = Math.min(maxFrames, Math.max(2, Math.round(duration * fps)));
       for (let i = 0; i < count; i++) {
-        const t = Math.min(duration - 0.02, (i / count) * duration);
+        const seekTime = Math.min(duration - 0.02, (i / count) * duration);
         await new Promise((resolve) => {
           video.onseeked = resolve;
-          video.currentTime = Math.max(0, t);
+          video.currentTime = Math.max(0, seekTime);
         });
         canvases.push(drawSourceCoverToBadgeCanvas(video, video.videoWidth || targetW, video.videoHeight || targetH, targetW, targetH));
       }
@@ -770,23 +853,23 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
     const avi = SuperBandClient.buildMjpegAvi(jpegs, targetW, targetH, fps);
     if (avi.length <= maxAviBytes || q === 0.38) return avi;
   }
-  throw new Error("動畫編碼後仍超過容量上限");
+  throw new Error(t("errMediaSizeExceeded"));
 }
 
 $btnUploadMedia.addEventListener("click", async () => {
   hideNotice();
   if (!client.isConnected) {
-    showNotice("warn", "尚未連線至徽章", "請先連線至徽章！");
+    showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodyMedia" });
     return;
   }
   if (!currentMediaFile) {
-    showNotice("warn", "尚未選取檔案", "請先選擇 GIF 動態圖、MP4 影片或 AVI 檔案！");
+    showNotice("warn", { titleKey: "noticeNoMediaTitle", bodyKey: "noticeNoMediaBody" });
     return;
   }
 
   try {
     $btnUploadMedia.disabled = true;
-    showProgress(true, "正在擷取影格並轉碼為 MJPEG AVI...");
+    showProgress(true, t("progressTranscodingMedia"));
     const targetW = client.screenWidth || cropState.targetW || 240;
     const targetH = client.screenHeight || cropState.targetH || 240;
     const bytes = await encodeMediaFileToMjpegAvi(currentMediaFile, targetW, targetH, 220 * 1024);
@@ -794,18 +877,29 @@ $btnUploadMedia.addEventListener("click", async () => {
     const typeStr = $selMediaType.value;
     const slot = 0;
 
-    log(`開始上傳 ${typeStr}: ${fileName} (MJPEG AVI ${targetW}x${targetH}, ${bytes.length} 位元組, 固定槽位 Slot ${slot})...`);
+    log(t("logMediaUploadStart", {
+      type: typeStr,
+      name: fileName,
+      w: targetW,
+      h: targetH,
+      bytes: bytes.length,
+      slot,
+    }));
     await client.uploadDialImage(bytes, (sent, total, pct) => {
-      updateProgress(sent, total, pct, `正在傳輸 ${fileName} (${pct}%)...`);
+      updateProgress(sent, total, pct, t("progressUploadingMedia", { name: fileName, pct }));
     }, { slot, isAvi: 1, custom: 0, dialId: client.activeDialId, fontPos: 0 });
 
     showProgress(false);
-    log(`🎉 ${typeStr} 徽章確認寫入成功！`);
+    log(t("logMediaUploadSuccess", { type: typeStr }));
     await refreshStorageSpace();
-    showNotice("success", "🎉 媒體已成功寫入徽章！", `${typeStr}: ${fileName} 已完成傳輸並更新顯示。`);
+    showNotice("success", {
+      titleKey: "noticeMediaSuccessTitle",
+      bodyKey: "noticeMediaSuccessBody",
+      bodyParams: { type: typeStr, name: fileName },
+    });
   } catch (err) {
-    log(`媒體上傳失敗: ${err.message}`);
-    showNotice("error", "媒體上傳失敗", err.message);
+    log(t("logMediaUploadFailed", { msg: err.message }));
+    showNotice("error", { titleKey: "noticeMediaFailedTitle", rawBody: err.message });
   } finally {
     $btnUploadMedia.disabled = false;
     showProgress(false);
@@ -844,5 +938,102 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
   });
 });
 
-// 初始化畫布
+// ==========================================
+// 7. 雙語偵測與即時切換 (zh-TW / en)
+// ==========================================
+function applyLanguage() {
+  const lang = getCurrentLang();
+  document.documentElement.lang = lang === "en" ? "en" : "zh-TW";
+  document.title = t("pageTitle");
+
+  if ($btnLangZh) {
+    const isZh = lang === "zh";
+    $btnLangZh.classList.toggle("active", isZh);
+    $btnLangZh.setAttribute("aria-pressed", String(isZh));
+  }
+  if ($btnLangEn) {
+    const isEn = lang === "en";
+    $btnLangEn.classList.toggle("active", isEn);
+    $btnLangEn.setAttribute("aria-pressed", String(isEn));
+  }
+
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const key = el.getAttribute("data-i18n");
+    if (key) el.textContent = t(key);
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-title");
+    if (key) el.setAttribute("title", t(key));
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
+    const key = el.getAttribute("data-i18n-placeholder");
+    if (key) el.setAttribute("placeholder", t(key));
+  });
+
+  if (lastConnState.connected) {
+    $connStatusText.textContent = t("statusConnected", { name: lastConnState.deviceName || "SuperBand" });
+    if (lastConnState.profileKey) {
+      $infoProfile.textContent = t(lastConnState.profileKey);
+    } else if (lastConnState.profileName) {
+      $infoProfile.textContent = lastConnState.profileName;
+    }
+  } else {
+    $connStatusText.textContent = t("statusDisconnected");
+  }
+
+  if (lastDeviceInfo) {
+    $infoVersion.textContent = t("versionFormat", {
+      fw: lastDeviceInfo.deviceVersion || "v1.0",
+      proto: lastDeviceInfo.protocolVersion || "v1",
+    });
+  }
+
+  if (lastNoticeState) {
+    renderNotice(lastNoticeState);
+  }
+
+  if (lastMediaState.selected) {
+    if (lastMediaState.isAvi && $mediaPreviewContainer) {
+      $mediaPreviewContainer.innerHTML = "";
+      const span = document.createElement("span");
+      span.style.color = "#38bdf8";
+      span.style.fontSize = "13px";
+      span.textContent = t("mediaPreviewAvi", { name: lastMediaState.name });
+      $mediaPreviewContainer.appendChild(span);
+    }
+    if ($mediaDetails) {
+      $mediaDetails.textContent = t("mediaDetailsFmt", {
+        name: lastMediaState.name,
+        sizeMb: lastMediaState.sizeMb,
+        type: lastMediaState.type,
+      });
+    }
+  }
+
+  if (currentImg) {
+    updateEstimatedFileSize();
+  }
+}
+
+function handleLangChange(nextLang) {
+  if (getCurrentLang() === nextLang) return;
+  setLanguage(nextLang, true);
+  applyLanguage();
+  log(t("langSwitched"));
+}
+
+if ($btnLangZh) $btnLangZh.addEventListener("click", () => handleLangChange("zh"));
+if ($btnLangEn) $btnLangEn.addEventListener("click", () => handleLangChange("en"));
+
+// 啟動時自動偵測語言、套用介面並初始化畫布
+const startupLang = initLanguage();
+applyLanguage();
+if (startupLang.source === "query") {
+  log(t("langStatusQuery"));
+} else if (startupLang.source === "saved") {
+  log(t("langStatusSaved"));
+} else {
+  log(t("langStatusAuto", { browserLang: startupLang.browserLocale || "unknown" }));
+}
+
 updateCropTargetResolution();
