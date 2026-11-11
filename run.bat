@@ -1,7 +1,12 @@
 @echo off
 chcp 65001 >nul
-title 電子徽章 (JetBadge) 管理控制台
-echo 正在啟動 電子徽章 (JetBadge) 管理控制台...
+title JetBadge Web E-Badge Console
 cd /d "%~dp0"
-python server.py
+echo Starting JetBadge Web E-Badge Console...
+call python -c "import sys; sys.exit(0 if sys.version_info.major >= 3 else 1)" >nul 2>nul
+if %errorlevel%==0 (
+    call python server.py
+) else (
+    call py -3 server.py
+)
 pause
