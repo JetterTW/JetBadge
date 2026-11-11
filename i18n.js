@@ -185,7 +185,7 @@ export const STRINGS = {
     noticeSlideshowUploadSuccessBody: "{name}（{count} 張，間隔 {intervalSec} 秒）已完成傳輸並更新顯示。",
     logSlideshowUploadFailed: "多圖 AVI 上傳/匯出失敗: {msg}",
     noticeSlideshowFailedTitle: "多圖 AVI 處理失敗",
-    slideshowExceedsBudgetWarn: "{kb} ({chunks} 塊，超過剩餘空間 {budgetKb} KB)",
+    slideshowExceedsBudgetWarn: "{kb} ({chunks} 塊，超過剩餘空間 {budgetKb} KB • 可直接匯出，上傳將自動壓縮)",
     sizeChunksAutoQ: "{kb} ({chunks} 塊 • 依徽章格式最佳化 q={q})",
 
     // BLE Client (baji.js)
@@ -459,7 +459,7 @@ export const STRINGS = {
     noticeSlideshowUploadSuccessBody: "{name} ({count} slides, {intervalSec}s interval) uploaded and display updated.",
     logSlideshowUploadFailed: "Slideshow AVI export/upload failed: {msg}",
     noticeSlideshowFailedTitle: "Slideshow AVI Failed",
-    slideshowExceedsBudgetWarn: "{kb} (~{chunks} chunks, exceeds {budgetKb} KB free space)",
+    slideshowExceedsBudgetWarn: "{kb} (~{chunks} chunks, > {budgetKb} KB free • export works, upload auto-compresses)",
     sizeChunksAutoQ: "{kb} (~{chunks} chunks • badge-fit q={q})",
 
     // BLE Client (baji.js)

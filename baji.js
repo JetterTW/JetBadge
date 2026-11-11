@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v38)
+ * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v39)
  * Verified against BG02 / oem_DG01 (JieLi AC695N / BR28) Firmware:
  * - Service 7E400001-B5A3-F393-E0A9-E50E24DCCA9D
  * - Write   7E400002-B5A3-F393-E0A9-E50E24DCCA9D
  * - Notify  7E400003-B5A3-F393-E0A9-E50E24DCCA9D
  */
-import { t } from "./i18n.js?v=38";
+import { t } from "./i18n.js?v=39";
 
 export const BleProfiles = [
   {

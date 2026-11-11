@@ -31,7 +31,7 @@
 5. **多圖輪播製作 AVI（逐張微調 ＋ 拖曳排序 ＋ 間隔設定 ＋ 匯出／直傳）**
    - 可一次加入或拖曳多張圖片（JPG / PNG / WebP），點擊底部自動換行縮圖清單逐一拖曳構圖位置、滾輪/滑桿 **`1%` 單位** 縮放與旋轉微調，並支援**直接拖曳縮圖卡片**調整播放順序與預覽輪播效果。
    - 支援設定圖與圖間隔時間（**`0.1`～`0.9` 秒每 `0.1` 秒一段，`1`～`10` 秒每 `1` 秒一段**），自動精確封裝為標準 RIFF MJPEG AVI 時間基準（如 `0.1s` → `10 fps`，`10s` → `0.1 fps`）。
-   - **「匯出成 AVI 檔案」** 與 **「轉成 AVI 並上傳至徽章」** 共用完全一致的徽章封裝管線：相同的 MJPEG RIFF 結構、安全解析度上限（`≤ 359×359` 及已連線螢幕規格）與徽章 Flash 容量預算控制，確保匯出的 `.avi` 位元內容與直接上傳至徽章完全相同。
+   - **「匯出成 AVI 檔案」** 與 **「轉成 AVI 並上傳至徽章」** 使用完全相同的徽章 MJPEG AVI 封裝格式（RIFF `MJPG` 結構、去除多餘標頭之 Baseline JPEG 與解析度上限 `≤ 359×359`）；匯出本機 `.avi` 時**不限制裝置剩餘空間**，直接上傳至徽章則會依剩餘 Flash 容量自動最佳化壓縮。
 
    ![JetBadge 多圖輪播製作 AVI 畫面](docs/screenshot-slideshow.jpg)
 6. **穩定傳輸與充電保護即時提醒**
@@ -119,7 +119,7 @@
 5. **Multi-Photo AVI Slideshow Maker (Per-Photo Crop + Drag Reorder + Interval + Export/Upload)**
    - Add or drag multiple images at once, click any thumbnail in the wrapping queue to individually pan position, zoom (`1%` steps), rotate, and **drag & drop cards to reorder** slides cleanly, with an interactive loop preview player.
    - Choose exact slide intervals (`0.1s` to `0.9s` in `0.1s` steps, and `1s` to `10s` in `1s` steps), muxed into exact RIFF MJPEG AVI timebases (`10 fps` down to `0.1 fps`).
-   - **Export as `.avi`** and **Convert & Upload directly to your connected badge** use the exact same MJPEG AVI encoding pipeline—identical RIFF structure, resolution bounds (`≤ 359×359` and connected display dimensions), and badge Flash capacity budget—so exported `.avi` files match badge-uploaded payloads byte for byte.
+   - **Export as `.avi`** and **Convert & Upload directly to your connected badge** use the exact same MJPEG AVI badge format (RIFF `MJPG` muxing, header-stripped Baseline JPEGs, and `≤ 359×359` resolution bounds); exporting locally **does not enforce device storage limits**, while direct badge upload automatically compresses to fit remaining Flash capacity.
 
    ![JetBadge Multi-Photo AVI Slideshow Screenshot](docs/screenshot-slideshow.jpg)
 6. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**

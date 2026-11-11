@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=38";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=38";
+import { SuperBandClient } from "./baji.js?v=39";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=39";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -1824,17 +1824,16 @@ function updateSlideshowEstimate() {
   if (slideEstimateTimer) clearTimeout(slideEstimateTimer);
   slideEstimateTimer = setTimeout(async () => {
     try {
-      const { maxAviBytes } = getBadgeMediaLimits();
-      const res = await buildSlideshowAviPayload(maxAviBytes, {
+      const res = await buildSlideshowAviPayload(Infinity, {
         silent: true,
-        allowOversize: true,
         isCancelled: () => gen !== slideEstimateGen,
       });
       if (!res || gen !== slideEstimateGen) return;
 
       const kbStr = `${(res.bytes.length / 1024).toFixed(2)} KB`;
       const chunks = Math.ceil((res.bytes.length + 4) / 200);
-      if (res.exceedsBudget) {
+      const { maxAviBytes } = getBadgeMediaLimits();
+      if (client.isConnected && lastFreeStorageKb != null && res.bytes.length > maxAviBytes) {
         $slideshowEstimatedSize.style.color = "#fbbf24";
         $slideshowEstimatedSize.textContent = t("slideshowExceedsBudgetWarn", {
           kb: kbStr,
@@ -1843,9 +1842,7 @@ function updateSlideshowEstimate() {
         });
       } else {
         $slideshowEstimatedSize.style.color = "#38bdf8";
-        $slideshowEstimatedSize.textContent = res.quality < 0.88
-          ? t("sizeChunksAutoQ", { kb: kbStr, chunks, q: res.quality })
-          : t("sizeChunks", { kb: kbStr, chunks });
+        $slideshowEstimatedSize.textContent = t("sizeChunks", { kb: kbStr, chunks });
       }
     } catch {
       if (gen === slideEstimateGen && $slideshowEstimatedSize) {
@@ -1856,21 +1853,23 @@ function updateSlideshowEstimate() {
   }, 180);
 }
 
-async function buildSlideshowAviPayload(maxBytes, options = {}) {
-  const budget = maxBytes ?? getBadgeMediaLimits().maxAviBytes;
-  const { silent = false, allowOversize = false, isCancelled = null } = options;
+async function buildSlideshowAviPayload(maxBytes = Infinity, options = {}) {
+  const hasFiniteBudget = Number.isFinite(maxBytes) && maxBytes > 0;
+  const budget = hasFiniteBudget ? maxBytes : Infinity;
+  const { silent = false, isCancelled = null } = options;
   const { safeW, safeH } = getSlideshowBadgeTargetSize();
   const shape = $selSlideshowShape ? $selSlideshowShape.value : "circle";
   const timing = SuperBandClient.intervalSecToAviTiming(getSlideIntervalSeconds());
 
   const canvases = slides.map((s) => exportCropToCanvas(s.img, s.crop, shape, safeW, safeH));
   const aviOverhead = 240 + canvases.length * 26;
-  const perFrameBudget = Math.max(1536, Math.floor((budget - aviOverhead) / canvases.length));
+  const perFrameBudget = hasFiniteBudget
+    ? Math.max(1536, Math.floor((budget - aviOverhead) / canvases.length))
+    : 96 * 1024;
+  const qualities = hasFiniteBudget ? [0.88, 0.78, 0.68, 0.56, 0.44, 0.32, 0.25] : [0.88];
   let lastAvi = null;
-  let lastQ = 0.88;
-  for (const q of [0.88, 0.78, 0.68, 0.56, 0.44, 0.32, 0.25]) {
+  for (const q of qualities) {
     if (isCancelled && isCancelled()) return null;
-    lastQ = q;
     const jpegs = [];
     for (const c of canvases) {
       if (isCancelled && isCancelled()) return null;
@@ -1878,7 +1877,7 @@ async function buildSlideshowAviPayload(maxBytes, options = {}) {
     }
     if (isCancelled && isCancelled()) return null;
     lastAvi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, timing);
-    if (lastAvi.length <= budget) {
+    if (!hasFiniteBudget || lastAvi.length <= budget) {
       if (!silent) {
         log(t("logSlideshowBuilt", {
           count: slides.length,
@@ -1895,20 +1894,8 @@ async function buildSlideshowAviPayload(maxBytes, options = {}) {
         height: safeH,
         timing,
         quality: q,
-        exceedsBudget: false,
       };
     }
-  }
-
-  if (allowOversize && lastAvi) {
-    return {
-      bytes: lastAvi,
-      width: safeW,
-      height: safeH,
-      timing,
-      quality: lastQ,
-      exceedsBudget: true,
-    };
   }
 
   throw new Error(t("errAviTooLargeAfterCompress", {
@@ -2160,8 +2147,7 @@ if ($btnExportSlideshowAvi) {
     try {
       $btnExportSlideshowAvi.disabled = true;
       showProgress(true, t("progressEncodingSlideshow", { count: slides.length }));
-      const { maxAviBytes } = getBadgeMediaLimits();
-      const { bytes, timing } = await buildSlideshowAviPayload(maxAviBytes);
+      const { bytes, timing } = await buildSlideshowAviPayload(Infinity);
 
       const rawName = ($txtSlideshowName?.value || "slideshow_01").trim() || "slideshow_01";
       const fileName = rawName.toLowerCase().endsWith(".avi") ? rawName : `${rawName}.avi`;
