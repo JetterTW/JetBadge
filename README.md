@@ -32,6 +32,8 @@
    - 可一次加入或拖曳多張圖片（JPG / PNG / WebP），點擊底部自動換行縮圖清單逐一拖曳構圖位置、滾輪/滑桿 **`1%` 單位** 縮放與旋轉微調，並支援**直接拖曳縮圖卡片**調整播放順序與預覽輪播效果。
    - 支援設定圖與圖間隔時間（**`0.1`～`0.9` 秒每 `0.1` 秒一段，`1`～`10` 秒每 `1` 秒一段**），自動精確封裝為標準 RIFF MJPEG AVI 時間基準（如 `0.1s` → `10 fps`，`10s` → `0.1 fps`）。
    - 可離線一鍵 **「匯出成 AVI 檔案」**，或在連線徽章時自動依剩餘 Flash 容量最佳化壓縮並直接上傳至徽章輪播顯示。
+
+   ![JetBadge 多圖輪播製作 AVI 畫面](docs/screenshot-slideshow.jpg)
 6. **穩定傳輸與充電保護即時提醒**
    - 採用 `CMD=31`（每塊 200 Bytes）+ 徽章 Flash ACK 流控（`status = 1000 + seq`）與完整校驗和提交（`CMD=31 SUB=3`）。
    - 若徽章正連接充電線而觸發原廠韌體硬體保護（回報 `status=4 / ERROR_CHARGE_BATTERY`），頁面會立即以非阻塞提示橫幅提醒**先拔除充電線後再上傳**，避免重複重試或阻塞瀏覽器造成藍牙斷線。
@@ -80,6 +82,7 @@
 | `i18n.js` | 繁體中文／英文雙語字典、初始語系偵測與字串格式化模組 |
 | `baji.js` | `SuperBandClient` BLE 通訊模組（封包編解碼、MJPEG AVI 封裝與分塊 ACK 流控） |
 | `docs/screenshot.jpg` | 控制台實機連線裁切畫面截圖 |
+| `docs/screenshot-slideshow.jpg` | 多圖輪播製作 AVI 與拖曳排序畫面截圖 |
 | `server.py` | Python 內建標準庫本地 HTTP 伺服器（含 `no-cache` 標頭與自動開瀏覽器） |
 | `run.bat` | Windows 一鍵啟動批次檔 |
 
@@ -117,6 +120,8 @@
    - Add or drag multiple images at once, click any thumbnail in the wrapping queue to individually pan position, zoom (`1%` steps), rotate, and **drag & drop cards to reorder** slides cleanly, with an interactive loop preview player.
    - Choose exact slide intervals (`0.1s` to `0.9s` in `0.1s` steps, and `1s` to `10s` in `1s` steps), muxed into exact RIFF MJPEG AVI timebases (`10 fps` down to `0.1 fps`).
    - Either **Export as `.avi`** locally offline or **Convert & Upload directly to your connected badge** with automatic Flash-budget compression.
+
+   ![JetBadge Multi-Photo AVI Slideshow Screenshot](docs/screenshot-slideshow.jpg)
 6. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**
    - Streams 200-byte chunks (`CMD=31 SUB=1`) synchronized with firmware Flash write ACKs (`status = 1000 + seq`) and full checksum verification (`CMD=31 SUB=3`).
    - Immediately detects firmware charging lock (`status=4 / ERROR_CHARGE_BATTERY`) and displays a non-blocking banner asking to unplug the USB charging cable—avoiding duplicate handshakes or modal `alert()` stalls that drop BLE connections.
@@ -165,6 +170,7 @@
 | `i18n.js` | Traditional Chinese / English localization dictionary, locale auto-detection, and formatter |
 | `baji.js` | `SuperBandClient` Web Bluetooth client, frame codec, MJPEG AVI muxer, chunk ACK flow control |
 | `docs/screenshot.jpg` | Console UI screenshot with connected badge |
+| `docs/screenshot-slideshow.jpg` | Multi-photo AVI slideshow editor & drag-reorder screenshot |
 | `server.py` | Zero-dependency Python HTTP server with `no-cache` headers and auto-browser launch |
 | `run.bat` | One-click Windows launcher script |
 
