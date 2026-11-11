@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>電子徽章 (JetBadge) 管理控制台</title>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #06b6d4;
+      --success: #10b981;
+      --danger: #ef4444;
+      --radius: 12px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--card-border);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .badge-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      background: #334155;
+      color: #cbd5e1;
+    }
+    .badge-status.connected {
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid #059669;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      padding: 20px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: var(--accent);
+    }
+
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    button:hover:not(:disabled) {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+    button.btn-danger {
+      background: var(--danger);
+    }
+    button.btn-danger:hover:not(:disabled) {
+      background: #dc2626;
+    }
+    button.btn-outline {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+    }
+    button.btn-outline:hover:not(:disabled) {
+      background: #334155;
+    }
+
+    .btn-refresh-pill {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 3px 12px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .btn-refresh-pill:hover:not(:disabled) {
+      background: #0056b3;
+    }
+    .btn-refresh-pill:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    input[type="text"], select {
+      width: 100%;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      outline: none;
+    }
+    input[type="text"]:focus, select:focus {
+      border-color: var(--primary);
+    }
+
+    .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+
+    /* Device Info Grid */
+    .info-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      font-size: 13px;
+    }
+    .info-item {
+      background: #0f172a;
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px solid #1e293b;
+    }
+    .info-label {
+      color: var(--text-muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .info-val {
+      font-weight: 600;
+      margin-top: 4px;
+      word-break: break-all;
+    }
+
+    .storage-bar-container {
+      margin-top: 12px;
+      background: #0f172a;
+      padding: 12px;
+      border-radius: 6px;
+    }
+    .storage-progress {
+      width: 100%;
+      height: 8px;
+      background: #334155;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .storage-fill {
+      height: 100%;
+      background: var(--accent);
+      width: 0%;
+      transition: width 0.3s;
+    }
+
+    /* Tabs */
+    .tab-header {
+      display: flex;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 16px;
+      gap: 8px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      padding: 8px 16px;
+      color: var(--text-muted);
+      font-size: 14px;
+      cursor: pointer;
+      border-radius: 6px 6px 0 0;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      font-weight: 600;
+    }
+    .tab-pane {
+      display: none;
+    }
+    .tab-pane.active {
+      display: block;
+    }
+
+    /* Cropper Canvas Area */
+    .cropper-box {
+      background: #090d16;
+      border: 2px dashed var(--card-border);
+      border-radius: 8px;
+      min-height: 280px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+      user-select: none;
+    }
+    .cropper-box:active {
+      cursor: grabbing;
+    }
+    #cropCanvas {
+      max-width: 100%;
+      max-height: 380px;
+      background: transparent;
+      display: block;
+    }
+
+    .cropper-tools {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 12px;
+      flex-wrap: wrap;
+    }
+
+    .slider-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      min-width: 180px;
+      font-size: 13px;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: var(--accent);
+    }
+
+    /* Media List Table */
+    .media-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .media-table th, .media-table td {
+      padding: 10px;
+      text-align: left;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .media-table th {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .media-row:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Progress & Logs */
+    .progress-bar-wrap {
+      margin: 12px 0;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 12px;
+      background: #334155;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4f46e5, #06b6d4);
+      width: 0%;
+      transition: width 0.1s linear;
+    }
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    #logBox {
+      background: #090d16;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 10px;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      height: 150px;
+      overflow-y: auto;
+      color: #cbd5e1;
+      white-space: pre-wrap;
+    }
+
+    .dropzone-tip {
+      color: var(--text-muted);
+      font-size: 13px;
+      text-align: center;
+      padding: 20px;
+      pointer-events: none;
+    }
+
+    .preview-thumbnail {
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #0f172a;
+    }
+
+    /* Non-blocking upload notice banner (avoids stalling Web Bluetooth event loop with alert()) */
+    .notice-banner {
+      display: none;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--card-border);
+      border-left-width: 4px;
+      background: #0f172a;
+      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .notice-banner.visible {
+      display: flex;
+    }
+    .notice-banner.error {
+      border-color: rgba(239, 68, 68, 0.45);
+      border-left-color: var(--danger);
+      background: rgba(239, 68, 68, 0.12);
+    }
+    .notice-banner.warn {
+      border-color: rgba(245, 158, 11, 0.45);
+      border-left-color: #f59e0b;
+      background: rgba(245, 158, 11, 0.12);
+    }
+    .notice-banner.success {
+      border-color: rgba(16, 185, 129, 0.45);
+      border-left-color: var(--success);
+      background: rgba(16, 185, 129, 0.12);
+    }
+    .notice-title {
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .notice-body {
+      color: #cbd5e1;
+      white-space: pre-line;
+    }
+    .notice-close {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 2px 8px;
+      font-size: 12px;
+      border-radius: 6px;
+      flex-shrink: 0;
+    }
+    .notice-close:hover:not(:disabled) {
+      background: #334155;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div>
+        <h1>
+          <span>⚡ 電子徽章 (JetBadge) 管理控制台</span>
+        </h1>
+        <p style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+          直接透過瀏覽器 Web Bluetooth 連線，支援相片裁切、GIF 動畫、MP4 影片上傳與圖像管理
+        </p>
+      </div>
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <div id="connStatus" class="badge-status">
+          <span class="status-dot"></span>
+          <span id="connStatusText">未連線</span>
+        </div>
+        <button id="btnConnect">搜尋並連接徽章</button>
+        <button id="btnDisconnect" class="btn-outline" disabled>中斷連線</button>
+      </div>
+    </header>
+
+    <!-- 設備連線與硬體資訊卡片 -->
+    <div class="card">
+      <div class="card-title">
+        <span>設備資訊與規格</span>
+        <div style="display: flex; gap: 6px;">
+          <button id="btnFindMe" class="btn-outline" style="padding: 4px 10px; font-size: 12px;" disabled>🔔 喚醒/尋找</button>
+          <button id="btnRefreshInfo" class="btn-outline" style="padding: 4px 10px; font-size: 12px;" disabled>讀取資訊</button>
+        </div>
+      </div>
+
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+        <label class="checkbox-label">
+          <input type="checkbox" id="chkAllDevices" checked />
+          搜尋附近全部藍牙設備（若徽章未廣播 Service UUID 請勾選）
+        </label>
+      </div>
+
+      <div class="info-list">
+        <div class="info-item">
+          <div class="info-label">設備名稱</div>
+          <div class="info-val" id="infoName">-</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">螢幕規格 / 解析度</div>
+          <div class="info-val" id="infoResolution">-</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">通訊 Profile</div>
+          <div class="info-val" id="infoProfile">-</div>
+        </div>
+        <div class="info-item">
+          <div class="info-label">韌體與協定版本</div>
+          <div class="info-val" id="infoVersion">-</div>
+        </div>
+      </div>
+
+      <div class="storage-bar-container">
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px;">
+          <span style="color: var(--text-muted);">Device remaining space:</span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <strong id="infoStorageText" style="color: var(--accent); font-size: 14px;">-</strong>
+            <button id="btnRefreshSpace" class="btn-refresh-pill" disabled>REFRESH</button>
+          </div>
+        </div>
+        <div class="storage-progress">
+          <div class="storage-fill" id="storageFill"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 媒體編輯與上傳區域 -->
+    <div class="card">
+      <div class="tab-header">
+        <button class="tab-btn active" data-tab="tab-photo">📸 相片裁切與上傳 (JPG/PNG)</button>
+        <button class="tab-btn" data-tab="tab-video">🎬 GIF 動畫 / MP4 影片上傳</button>
+      </div>
+
+      <div id="uploadNotice" class="notice-banner" role="status" aria-live="polite">
+        <div>
+          <div id="uploadNoticeTitle" class="notice-title"></div>
+          <div id="uploadNoticeBody" class="notice-body"></div>
+        </div>
+        <button id="btnCloseNotice" type="button" class="notice-close" title="關閉提示">✕</button>
+      </div>
+
+      <!-- Tab 1: 照片與裁切 -->
+      <div class="tab-pane active" id="tab-photo">
+        <div class="grid-2">
+          <!-- 裁切畫布 -->
+          <div>
+            <div class="cropper-box" id="dropArea">
+              <canvas id="cropCanvas" width="240" height="240"></canvas>
+              <div class="dropzone-tip" id="dropTip">
+                點擊下方按鈕或拖曳圖片 (JPG/PNG) 至此處<br>
+                支援滑鼠滾輪縮放、按住拖曳調整構圖
+              </div>
+            </div>
+
+            <!-- 控制滑桿 -->
+            <div class="cropper-tools">
+              <div class="slider-group">
+                <span>縮放:</span>
+                <input type="range" id="zoomRange" min="0.2" max="3.0" step="0.05" value="1.0">
+                <span id="zoomVal">100%</span>
+              </div>
+              <div class="btn-group">
+                <button id="btnRotateLeft" class="btn-outline" style="padding: 6px 10px;" title="向左旋轉90度">↺ 90°</button>
+                <button id="btnRotateRight" class="btn-outline" style="padding: 6px 10px;" title="向右旋轉90度">↻ 90°</button>
+                <button id="btnResetCrop" class="btn-outline" style="padding: 6px 10px;">重設</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 參數與上傳設定 -->
+          <div>
+            <div class="form-group">
+              <label>選擇或更換圖片檔案</label>
+              <input type="file" id="fileImageInput" accept="image/jpeg,image/png,image/webp" style="display: none;" />
+              <button id="btnSelectFile" class="btn-outline" style="width: 100%; justify-content: center;">
+                📂 瀏覽電腦中的圖片 (JPG/PNG)
+              </button>
+            </div>
+
+            <div class="form-group">
+              <label>徽章裁切遮罩形狀</label>
+              <select id="selCropShape">
+                <option value="circle">圓形徽章 (圓形電子吧唧，預覽外圍半透明黑遮罩)</option>
+                <option value="square">方形徽章 (方形/矩形螢幕)</option>
+              </select>
+            </div>
+
+            <div class="grid-2" style="gap: 12px;">
+              <div class="form-group">
+                <label>目標輸出寬高 (像素)</label>
+                <select id="selResolution">
+                  <option value="240x240" selected>240 x 240 (標準圓形/方形吧唧)</option>
+                  <option value="360x360">360 x 360 (高解析圓形吧唧)</option>
+                  <option value="240x280">240 x 280 (長方形螢幕)</option>
+                  <option value="128x128">128 x 128 (小尺寸點陣)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>影像編碼格式</label>
+                <select id="selFormat">
+                  <option value="avi" selected>MJPEG AVI 封裝 (BG02 /bgp_wa0.avi 原生顯示格式)</option>
+                  <option value="jpeg">Baseline JPEG 靜態圖 (isAvi=0，僅供測試)</option>
+                  <option value="rgb565">RGB565 原生點陣 (isAvi=0，115.2 KB，僅供測試)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Selected image size:</span>
+                <strong id="selectedImageSize" style="color: #38bdf8;">-</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span style="color: var(--text-muted);">Device remaining space:</span>
+                <strong id="deviceRemainingSpace" style="color: var(--accent);">-</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: var(--text-muted);">裁切輸出解析度:</span>
+                <span id="previewDimensions">240 x 240 px</span>
+                <span id="previewFileSize" style="display: none;">-</span>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>上傳相片名稱</label>
+              <input type="text" id="txtPhotoName" value="photo_01" placeholder="例如：my_badge" />
+            </div>
+
+            <button id="btnUploadCropped" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;" disabled>
+              🚀 裁切並立即上傳至徽章
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab 2: GIF 與 MP4 影片 -->
+      <div class="tab-pane" id="tab-video">
+        <div class="grid-2">
+          <div>
+            <div class="form-group">
+              <label>選擇 GIF 動態圖 或 MP4 影片檔案</label>
+              <input type="file" id="fileMediaInput" accept="image/gif,video/mp4,video/webm,.avi,video/x-msvideo" style="display: none;" />
+              <button id="btnSelectMedia" class="btn-outline" style="width: 100%; justify-content: center;">
+                🎞️ 瀏覽 GIF 動畫 / MP4 影片
+              </button>
+            </div>
+
+            <div class="form-group">
+              <label>上傳檔名</label>
+              <input type="text" id="txtMediaName" value="anim_01" />
+            </div>
+
+            <div class="form-group">
+              <label>傳輸模式</label>
+              <select id="selMediaType">
+                <option value="ANIMATION">ANIMATION (適用 GIF 動態圖片)</option>
+                <option value="VIDEO">VIDEO (適用 MP4 短影片)</option>
+              </select>
+            </div>
+
+            <button id="btnUploadMedia" style="width: 100%; justify-content: center; padding: 12px; font-size: 15px;" disabled>
+              🚀 上傳動畫/影片至徽章
+            </button>
+          </div>
+
+          <!-- 媒體預覽區 -->
+          <div style="background: #090d16; border: 1px solid var(--card-border); border-radius: 8px; padding: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 240px;">
+            <div id="mediaPreviewContainer" style="max-width: 100%; max-height: 260px; display: flex; align-items: center; justify-content: center;">
+              <span style="color: var(--text-muted); font-size: 13px;">尚未選取檔案預覽</span>
+            </div>
+            <div id="mediaDetails" style="font-size: 12px; color: var(--text-muted); margin-top: 10px;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 傳輸進度與即時日誌 -->
+    <div class="card">
+      <div class="card-title">傳輸進度與 BLE 通訊日誌</div>
+
+      <div class="progress-bar-wrap" id="progressWrap" style="display: none;">
+        <div class="progress-bar">
+          <div class="progress-bar-fill" id="progressFill"></div>
+        </div>
+        <div class="progress-text">
+          <span id="progressStatusText">準備傳輸...</span>
+          <span id="progressBytesText">0 / 0 KB (0%)</span>
+        </div>
+      </div>
+
+      <div id="logBox"></div>
+      <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+        <button id="btnClearLog" class="btn-outline" style="padding: 4px 10px; font-size: 12px;">清除記錄</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js?v=33"></script>
+</body>
+</html>
