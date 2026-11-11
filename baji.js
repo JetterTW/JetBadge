@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v35)
+ * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v36)
  * Verified against BG02 / oem_DG01 (JieLi AC695N / BR28) Firmware:
  * - Service 7E400001-B5A3-F393-E0A9-E50E24DCCA9D
  * - Write   7E400002-B5A3-F393-E0A9-E50E24DCCA9D
  * - Notify  7E400003-B5A3-F393-E0A9-E50E24DCCA9D
  */
-import { t } from "./i18n.js?v=35";
+import { t } from "./i18n.js?v=36";
 
 export const BleProfiles = [
   {
@@ -848,6 +848,23 @@ export class SuperBandClient {
       rate,
       totalFrames: frames.length || totalFramesHdr,
       frames,
+    };
+  }
+
+  /**
+   * 將每張圖片顯示間隔秒數 (0.1 ~ 10s，以 0.1s 為單位) 換算為精確 RIFF AVI 時基物件 { scale, rate, fps, intervalSec }。
+   */
+  static intervalSecToAviTiming(intervalSec) {
+    const secNum = Number(intervalSec);
+    const clamped = Number.isFinite(secNum) ? Math.max(0.1, Math.min(10, secNum)) : 1;
+    const tenths = Math.max(1, Math.min(100, Math.round(clamped * 10)));
+    const gcd = (a, b) => (b === 0 ? a : gcd(b, a % b));
+    const g = gcd(tenths, 10);
+    return {
+      scale: tenths / g,
+      rate: 10 / g,
+      fps: 10 / tenths,
+      intervalSec: tenths / 10,
     };
   }
 

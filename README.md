@@ -23,15 +23,19 @@
 3. **互動式相片裁切器（JPG / PNG / WebP）**
    - 支援瀏覽選檔或直接拖曳圖片至畫布。
    - 支援**圓形徽章**（半透明遮罩預覽）與**方形徽章**遮罩切換。
-   - 支援滑鼠拖曳平移、滾輪或滑桿縮放（`20% – 300%`）、向左／向右旋轉 `90°` 與一鍵重設。
+   - 支援滑鼠拖曳平移、滑輪／滑桿／`−` `+` 按鈕以 **`1%` 精細步進** 縮放（`40% – 400%`）、向左／向右旋轉 `90°` 與一鍵重設。
    - 支援目標輸出解析度選擇（`240x240`、`360x360`、`240x280`、`128x128`），預設封裝為 BG02 原生可顯示之單影格 **MJPEG AVI**（`/bgp_wa0.avi`，固定 Slot 0）；亦提供 Baseline JPEG 與 RGB565 測試選項。
 4. **GIF 動畫 / MP4 影片 / AVI 上傳**
    - 直接於瀏覽器內擷取影格並轉碼壓縮為 **MJPEG AVI** 後上傳至徽章 `/bgp_wa0.avi`。
    - 完整支援 `.avi` 檔案即時動畫預覽（含輪播速率如 `0.1 fps`）與智慧相容處理：自動去除 `JUNK` / `APP2` / `COM` 等冗餘區段，並在解析度超過徽章螢幕（如 `368×368` → `240×240`）或超出剩餘 Flash 空間時自動縮放與最佳化壓縮，保留原始輪播幀率。
-5. **穩定傳輸與充電保護即時提醒**
+5. **多圖輪播製作 AVI（逐張微調 ＋ 間隔設定 ＋ 匯出／直傳）**
+   - 可一次加入或拖曳多張圖片（JPG / PNG / WebP），點擊底部縮圖逐一拖曳構圖位置、滾輪/滑桿 **`1%` 單位** 縮放與旋轉微調，並支援調整前後順序與預覽輪播效果。
+   - 支援設定圖與圖間隔時間（**`0.1`～`0.9` 秒每 `0.1` 秒一段，`1`～`10` 秒每 `1` 秒一段**），自動精確封裝為標準 RIFF MJPEG AVI 時間基準（如 `0.1s` → `10 fps`，`10s` → `0.1 fps`）。
+   - 可離線一鍵 **「匯出成 AVI 檔案」**，或在連線徽章時自動依剩餘 Flash 容量最佳化壓縮並直接上傳至徽章輪播顯示。
+6. **穩定傳輸與充電保護即時提醒**
    - 採用 `CMD=31`（每塊 200 Bytes）+ 徽章 Flash ACK 流控（`status = 1000 + seq`）與完整校驗和提交（`CMD=31 SUB=3`）。
    - 若徽章正連接充電線而觸發原廠韌體硬體保護（回報 `status=4 / ERROR_CHARGE_BATTERY`），頁面會立即以非阻塞提示橫幅提醒**先拔除充電線後再上傳**，避免重複重試或阻塞瀏覽器造成藍牙斷線。
-6. **雙語自動偵測與即時切換（繁體中文 / English）**
+7. **雙語自動偵測與即時切換（繁體中文 / English）**
    - 進入控制台時依 `?lang=zh|en` 網址參數、`localStorage` 已儲存偏好與瀏覽器語系（`navigator.languages`）自動判斷顯示繁體中文或英文。
    - 右上角提供 **`中文 / EN`** 分段切換鈕，可即時切換完整介面文字、選單、提示橫幅與 BLE 通訊日誌語言並記住設定。
 
@@ -104,15 +108,19 @@
 3. **Interactive Photo Cropper (JPG / PNG / WebP)**
    - Click-to-browse or drag-and-drop image loading directly on the HTML5 canvas.
    - Switchable **Circle Badge** (translucent overlay preview) and **Square Badge** crop masks.
-   - Interactive mouse drag panning, scroll-wheel / slider zoom (`20% – 300%`), `90°` left/right rotation, and reset.
+   - Interactive mouse drag panning, fine **`1%`-step** zoom via scroll wheel, range slider, or `−`/`+` buttons (`40% – 400%`), `90°` left/right rotation, and reset.
    - Configurable output resolutions (`240x240`, `360x360`, `240x280`, `128x128`), packaged by default as a clean single-frame **MJPEG AVI** (`/bgp_wa0.avi`, Slot 0), alongside optional Baseline JPEG and RGB565 test modes.
 4. **GIF / MP4 / AVI Animation Upload**
    - Extracts frames directly in the browser and transcodes them into a badge-compatible **MJPEG AVI** stream for `/bgp_wa0.avi`.
    - Full `.avi` support with live animated canvas preview and smart firmware adaptation: parses RIFF MJPEG frames, strips redundant headers (`JUNK` / `APP2` / `COM`), preserves slow slideshow frame rates (e.g. `0.1 fps`), and automatically resizes/compresses oversized AVI files (such as `368×368`) to match the badge screen and remaining Flash capacity.
-5. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**
+5. **Multi-Photo AVI Slideshow Maker (Per-Photo Crop + Custom Interval + Export/Upload)**
+   - Add or drag multiple images at once, click any thumbnail in the filmstrip to individually pan position, zoom (`1%` steps), rotate, and reorder slides, with an interactive loop preview player.
+   - Choose exact slide intervals (`0.1s` to `0.9s` in `0.1s` steps, and `1s` to `10s` in `1s` steps), muxed into exact RIFF MJPEG AVI timebases (`10 fps` down to `0.1 fps`).
+   - Either **Export as `.avi`** locally offline or **Convert & Upload directly to your connected badge** with automatic Flash-budget compression.
+6. **Flow-Controlled Upload & Non-Blocking Charge Protection Notice**
    - Streams 200-byte chunks (`CMD=31 SUB=1`) synchronized with firmware Flash write ACKs (`status = 1000 + seq`) and full checksum verification (`CMD=31 SUB=3`).
    - Immediately detects firmware charging lock (`status=4 / ERROR_CHARGE_BATTERY`) and displays a non-blocking banner asking to unplug the USB charging cable—avoiding duplicate handshakes or modal `alert()` stalls that drop BLE connections.
-6. **Bilingual UI (`中文 / EN`) with Auto-Detection**
+7. **Bilingual UI (`中文 / EN`) with Auto-Detection**
    - Automatically selects English or Traditional Chinese on startup via `?lang=en|zh` query parameter, saved `localStorage` preference, or browser locale (`navigator.languages`).
    - Includes a **`中文 / EN`** toggle in the header that switches all labels, controls, notices, and BLE logs live and persists your preference.
 

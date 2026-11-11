@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=35";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=35";
+import { SuperBandClient } from "./baji.js?v=36";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=36";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -35,7 +35,9 @@ const $btnSelectFile = $("btnSelectFile");
 const $selCropShape = $("selCropShape");
 const $selResolution = $("selResolution");
 const $selFormat = $("selFormat");
+const $btnZoomOut = $("btnZoomOut");
 const $zoomRange = $("zoomRange");
+const $btnZoomIn = $("btnZoomIn");
 const $zoomVal = $("zoomVal");
 const $btnRotateLeft = $("btnRotateLeft");
 const $btnRotateRight = $("btnRotateRight");
@@ -54,6 +56,36 @@ const $btnUploadMedia = $("btnUploadMedia");
 const $mediaPreviewContainer = $("mediaPreviewContainer");
 const $mediaDetails = $("mediaDetails");
 const $mediaDropArea = $("mediaDropArea");
+
+// 多圖輪播製作 AVI
+const $btnPrevSlide = $("btnPrevSlide");
+const $slideCounterLabel = $("slideCounterLabel");
+const $btnNextSlide = $("btnNextSlide");
+const $btnToggleSlidePreview = $("btnToggleSlidePreview");
+const $slideshowDropArea = $("slideshowDropArea");
+const $slideshowCanvas = $("slideshowCanvas");
+const slideshowCtx = $slideshowCanvas ? $slideshowCanvas.getContext("2d") : null;
+const $slideshowDropTip = $("slideshowDropTip");
+const $btnSlideZoomOut = $("btnSlideZoomOut");
+const $slideshowZoomRange = $("slideshowZoomRange");
+const $btnSlideZoomIn = $("btnSlideZoomIn");
+const $slideshowZoomVal = $("slideshowZoomVal");
+const $btnSlideRotateLeft = $("btnSlideRotateLeft");
+const $btnSlideRotateRight = $("btnSlideRotateRight");
+const $btnResetSlideCrop = $("btnResetSlideCrop");
+const $fileSlideshowInput = $("fileSlideshowInput");
+const $btnAddSlides = $("btnAddSlides");
+const $btnClearSlides = $("btnClearSlides");
+const $selSlideshowShape = $("selSlideshowShape");
+const $selSlideshowRes = $("selSlideshowRes");
+const $selSlideInterval = $("selSlideInterval");
+const $slideshowCountDuration = $("slideshowCountDuration");
+const $slideshowEstimatedSize = $("slideshowEstimatedSize");
+const $slideshowRemainingSpace = $("slideshowRemainingSpace");
+const $txtSlideshowName = $("txtSlideshowName");
+const $btnExportSlideshowAvi = $("btnExportSlideshowAvi");
+const $btnUploadSlideshow = $("btnUploadSlideshow");
+const $slideshowThumbList = $("slideshowThumbList");
 
 // 進度條與非阻塞提示橫幅
 const $progressWrap = $("progressWrap");
@@ -150,6 +182,7 @@ function updateUIConnectionState(connected, info = null) {
     $btnFindMe.disabled = false;
     $btnUploadCropped.disabled = false;
     $btnUploadMedia.disabled = false;
+    if ($btnUploadSlideshow) $btnUploadSlideshow.disabled = false;
     if ($btnRefreshSpace) $btnRefreshSpace.disabled = false;
   } else {
     lastConnState = { connected: false, deviceName: "", profileName: "", profileKey: null };
@@ -162,6 +195,7 @@ function updateUIConnectionState(connected, info = null) {
     $btnFindMe.disabled = true;
     $btnUploadCropped.disabled = true;
     $btnUploadMedia.disabled = true;
+    if ($btnUploadSlideshow) $btnUploadSlideshow.disabled = true;
     if ($btnRefreshSpace) $btnRefreshSpace.disabled = true;
 
     observedTotalFlashKb = 0;
@@ -172,8 +206,10 @@ function updateUIConnectionState(connected, info = null) {
     $infoVersion.textContent = "-";
     $infoStorageText.textContent = "-";
     if ($deviceRemainingSpace) $deviceRemainingSpace.textContent = "-";
+    if ($slideshowRemainingSpace) $slideshowRemainingSpace.textContent = "-";
     $storageFill.style.width = "0%";
     if (typeof renderMediaDetails === "function") renderMediaDetails();
+    if (typeof updateSlideshowEstimate === "function") updateSlideshowEstimate();
   }
 }
 
@@ -214,6 +250,7 @@ function updateStorageDisplay(freeKb) {
       : `${freeKb.toFixed(2)} KB`;
     $infoStorageText.textContent = text;
     if ($deviceRemainingSpace) $deviceRemainingSpace.textContent = text;
+    if ($slideshowRemainingSpace) $slideshowRemainingSpace.textContent = text;
     if (observedTotalFlashKb <= 0 || freeKb > observedTotalFlashKb) {
       observedTotalFlashKb = freeKb <= 512 ? 512 : Math.ceil(freeKb / 512) * 512;
     }
@@ -224,9 +261,11 @@ function updateStorageDisplay(freeKb) {
     lastFreeStorageKb = null;
     $infoStorageText.textContent = "-";
     if ($deviceRemainingSpace) $deviceRemainingSpace.textContent = "-";
+    if ($slideshowRemainingSpace) $slideshowRemainingSpace.textContent = "-";
     $storageFill.style.width = "0%";
   }
   if (typeof renderMediaDetails === "function") renderMediaDetails();
+  if (typeof updateSlideshowEstimate === "function") updateSlideshowEstimate();
 }
 
 async function refreshStorageSpace() {
@@ -259,15 +298,22 @@ async function refreshDeviceInfo() {
 
     updateStorageDisplay(info.freeStorageKb);
 
-    // 若從設備偵測到解析度，同步套用到裁切設定
+    // 若從設備偵測到解析度，同步套用到裁切設定與多圖輪播設定
     if (info.detectedResolution.includes("240 x 240")) {
       $selResolution.value = "240x240";
+      if ($selSlideshowRes) $selSlideshowRes.value = "240x240";
     } else if (info.detectedResolution.includes("360 x 360")) {
       $selResolution.value = "360x360";
+      if ($selSlideshowRes) $selSlideshowRes.value = "359x359";
     } else if (info.detectedResolution.includes("240 x 280")) {
       $selResolution.value = "240x280";
+      if ($selSlideshowRes) $selSlideshowRes.value = "240x280";
+    } else if (info.detectedResolution.includes("128 x 128")) {
+      $selResolution.value = "128x128";
+      if ($selSlideshowRes) $selSlideshowRes.value = "128x128";
     }
     updateCropTargetResolution();
+    if (typeof updateSlideshowTargetResolution === "function") updateSlideshowTargetResolution();
   } catch (err) {
     log(t("logReadInfoFailed", { msg: err.message }));
   }
@@ -283,8 +329,119 @@ $btnFindMe.addEventListener("click", async () => {
 });
 
 // ==========================================
-// 3. 相片裁切工具 (JPG/PNG Canvas Cropper)
+// 3. 相片裁切工具 (共用幾何運算與單圖 Canvas Cropper)
 // ==========================================
+function parseResolutionValue(val) {
+  const parts = String(val || "240x240").split("x");
+  const w = parseInt(parts[0], 10);
+  const h = parseInt(parts[1], 10);
+  return {
+    targetW: Number.isFinite(w) && w > 0 ? w : 240,
+    targetH: Number.isFinite(h) && h > 0 ? h : 240,
+  };
+}
+
+function computeInitialCropState(img, targetW, targetH) {
+  const baseScale = Math.max(targetW / img.naturalWidth, targetH / img.naturalHeight);
+  const scale = baseScale;
+  return {
+    x: (targetW - img.naturalWidth * scale) / 2,
+    y: (targetH - img.naturalHeight * scale) / 2,
+    userZoom: 1.0,
+    baseScale,
+    scale,
+    rotation: 0, // 0, 90, 180, 270
+  };
+}
+
+function applyZoomFactorToCrop(crop, zoomFactor, canvasW, canvasH) {
+  const oldScale = crop.scale || 1;
+  const clamped = Math.max(0.4, Math.min(4.0, Number(zoomFactor) || 1.0));
+  const roundedZoom = Math.round(clamped * 100) / 100; // 固定以 1% (0.01) 為步進單位
+  crop.userZoom = roundedZoom;
+  crop.scale = crop.baseScale * crop.userZoom;
+
+  // 以畫布中心為基準進行等比縮放
+  const cx = canvasW / 2;
+  const cy = canvasH / 2;
+  crop.x = cx - (cx - crop.x) * (crop.scale / oldScale);
+  crop.y = cy - (cy - crop.y) * (crop.scale / oldScale);
+  return roundedZoom;
+}
+
+function renderImageWithCrop(ctx, width, height, img, crop, shape, { previewOverlay = false } = {}) {
+  if (previewOverlay) {
+    ctx.clearRect(0, 0, width, height);
+  } else {
+    // 實心純黑底色，避免 JPEG/MJPEG 編碼產生雜色邊框
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  if (img && crop) {
+    ctx.save();
+    if (!previewOverlay && shape === "circle") {
+      ctx.beginPath();
+      ctx.arc(width / 2, height / 2, Math.min(width, height) / 2, 0, Math.PI * 2);
+      ctx.clip();
+    }
+    const cx = crop.x + (img.naturalWidth * crop.scale) / 2;
+    const cy = crop.y + (img.naturalHeight * crop.scale) / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate((crop.rotation * Math.PI) / 180);
+    ctx.drawImage(
+      img,
+      (-img.naturalWidth * crop.scale) / 2,
+      (-img.naturalHeight * crop.scale) / 2,
+      img.naturalWidth * crop.scale,
+      img.naturalHeight * crop.scale
+    );
+    ctx.restore();
+  } else if (previewOverlay) {
+    ctx.fillStyle = "#090d16";
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  if (previewOverlay && shape === "circle") {
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+    ctx.beginPath();
+    ctx.rect(0, 0, width, height);
+    const radius = Math.min(width, height) / 2;
+    ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2, true);
+    ctx.fill("evenodd");
+
+    ctx.strokeStyle = "rgba(6, 182, 212, 0.6)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(width / 2, height / 2, radius - 1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function exportCropToCanvas(img, crop, shape, targetW, targetH) {
+  const outCanvas = document.createElement("canvas");
+  outCanvas.width = targetW;
+  outCanvas.height = targetH;
+  const ctx = outCanvas.getContext("2d");
+  renderImageWithCrop(ctx, targetW, targetH, img, crop, shape, { previewOverlay: false });
+  return outCanvas;
+}
+
+function loadImageFileElement(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => resolve({ img, objectUrl });
+    img.onerror = () => {
+      try { URL.revokeObjectURL(objectUrl); } catch (_) {}
+      reject(new Error(t("logImageParseError")));
+    };
+    img.src = objectUrl;
+  });
+}
+
 let currentImg = null;
 let cropState = {
   x: 0,
@@ -301,20 +458,9 @@ let cropState = {
 };
 
 function updateCropTargetResolution() {
-  const val = $selResolution.value;
-  if (val === "240x240") {
-    cropState.targetW = 240;
-    cropState.targetH = 240;
-  } else if (val === "360x360") {
-    cropState.targetW = 360;
-    cropState.targetH = 360;
-  } else if (val === "240x280") {
-    cropState.targetW = 240;
-    cropState.targetH = 280;
-  } else if (val === "128x128") {
-    cropState.targetW = 128;
-    cropState.targetH = 128;
-  }
+  const { targetW, targetH } = parseResolutionValue($selResolution.value);
+  cropState.targetW = targetW;
+  cropState.targetH = targetH;
   $cropCanvas.width = cropState.targetW;
   $cropCanvas.height = cropState.targetH;
   $previewDimensions.textContent = `${cropState.targetW} x ${cropState.targetH} px`;
@@ -335,21 +481,19 @@ if ($selFormat) $selFormat.addEventListener("change", updateEstimatedFileSize);
 function initImageToCrop(img) {
   currentImg = img;
   $dropTip.style.display = "none";
-  cropState.rotation = 0;
-
-  // 計算自適應初始縮放比例，使圖片剛好填滿裁切框 (基於原生解析度，完全不受高像素檔案影響)
-  cropState.baseScale = Math.max(cropState.targetW / img.naturalWidth, cropState.targetH / img.naturalHeight);
-  cropState.userZoom = 1.0;
-  cropState.scale = cropState.baseScale * cropState.userZoom;
+  const initial = computeInitialCropState(img, cropState.targetW, cropState.targetH);
+  cropState.rotation = initial.rotation;
+  cropState.baseScale = initial.baseScale;
+  cropState.userZoom = initial.userZoom;
+  cropState.scale = initial.scale;
+  cropState.x = initial.x;
+  cropState.y = initial.y;
 
   $zoomRange.min = "0.4";
   $zoomRange.max = "4.0";
-  $zoomRange.step = "0.05";
+  $zoomRange.step = "0.01";
   $zoomRange.value = "1.0";
   $zoomVal.textContent = "100%";
-
-  cropState.x = (cropState.targetW - img.naturalWidth * cropState.scale) / 2;
-  cropState.y = (cropState.targetH - img.naturalHeight * cropState.scale) / 2;
 
   renderCrop();
   updateEstimatedFileSize();
@@ -360,48 +504,9 @@ function initImageToCrop(img) {
 }
 
 function renderCrop() {
-  cropCtx.clearRect(0, 0, $cropCanvas.width, $cropCanvas.height);
-
-  if (currentImg) {
-    cropCtx.save();
-    // 移動至畫布中心以處理旋轉
-    const cx = cropState.x + (currentImg.naturalWidth * cropState.scale) / 2;
-    const cy = cropState.y + (currentImg.naturalHeight * cropState.scale) / 2;
-    cropCtx.translate(cx, cy);
-    cropCtx.rotate((cropState.rotation * Math.PI) / 180);
-    cropCtx.drawImage(
-      currentImg,
-      (-currentImg.naturalWidth * cropState.scale) / 2,
-      (-currentImg.naturalHeight * cropState.scale) / 2,
-      currentImg.naturalWidth * cropState.scale,
-      currentImg.naturalHeight * cropState.scale
-    );
-    cropCtx.restore();
-  } else {
-    // 空狀態時繪製暗色背景
-    cropCtx.fillStyle = "#090d16";
-    cropCtx.fillRect(0, 0, $cropCanvas.width, $cropCanvas.height);
-  }
-
-  // 繪製裁切遮罩（圓形徽章外圍半透明黑罩）
-  const shape = $selCropShape.value;
-  if (shape === "circle") {
-    cropCtx.save();
-    cropCtx.fillStyle = "rgba(0, 0, 0, 0.65)";
-    cropCtx.beginPath();
-    cropCtx.rect(0, 0, $cropCanvas.width, $cropCanvas.height);
-    const radius = Math.min($cropCanvas.width, $cropCanvas.height) / 2;
-    cropCtx.arc($cropCanvas.width / 2, $cropCanvas.height / 2, radius, 0, Math.PI * 2, true);
-    cropCtx.fill("evenodd");
-
-    // 圓形邊界輔助線
-    cropCtx.strokeStyle = "rgba(6, 182, 212, 0.6)";
-    cropCtx.lineWidth = 1.5;
-    cropCtx.beginPath();
-    cropCtx.arc($cropCanvas.width / 2, $cropCanvas.height / 2, radius - 1, 0, Math.PI * 2);
-    cropCtx.stroke();
-    cropCtx.restore();
-  }
+  renderImageWithCrop(cropCtx, $cropCanvas.width, $cropCanvas.height, currentImg, cropState, $selCropShape.value, {
+    previewOverlay: true,
+  });
 }
 
 // 全域防止拖曳導致瀏覽器直接開啟新分頁
@@ -475,14 +580,26 @@ $dropArea.addEventListener("drop", (e) => {
   $dropArea.style.borderColor = "var(--card-border)";
   $dropArea.style.background = "#090d16";
 
-  let file = null;
+  const droppedFiles = [];
   if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-    file = e.dataTransfer.files[0];
+    droppedFiles.push(...e.dataTransfer.files);
   } else if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
-    const item = e.dataTransfer.items[0];
-    if (item.kind === 'file') file = item.getAsFile();
+    for (const item of e.dataTransfer.items) {
+      if (item.kind === 'file') {
+        const f = item.getAsFile();
+        if (f) droppedFiles.push(f);
+      }
+    }
   }
 
+  if (droppedFiles.length > 1) {
+    switchTab("tab-slideshow");
+    log(t("logDropSwitchedToSlideshowTab", { count: droppedFiles.length }));
+    addSlidesFromFiles(droppedFiles);
+    return;
+  }
+
+  const file = droppedFiles[0] || null;
   if (file) {
     const lower = file.name.toLowerCase();
     const isMediaExt = lower.endsWith(".avi") || lower.endsWith(".gif") || lower.endsWith(".mp4") || lower.endsWith(".webm") ||
@@ -526,42 +643,47 @@ window.addEventListener("mouseup", () => {
   }
 });
 
-// 畫布滑鼠滾輪縮放 (Zoom)
+// 畫布滑鼠滾輪縮放 (以 1% 為單位微調)
 $dropArea.addEventListener("wheel", (e) => {
   if (!currentImg) return;
   e.preventDefault();
-  const delta = e.deltaY < 0 ? 0.05 : -0.05;
-  const newZoom = Math.max(0.4, Math.min(4.0, cropState.userZoom + delta));
-  setZoom(newZoom);
+  const delta = e.deltaY < 0 ? 0.01 : -0.01;
+  setZoom(cropState.userZoom + delta);
 }, { passive: false });
 
 $zoomRange.addEventListener("input", (e) => {
   setZoom(parseFloat(e.target.value));
 });
 
+if ($btnZoomOut) {
+  $btnZoomOut.addEventListener("click", () => {
+    if (currentImg) setZoom(cropState.userZoom - 0.01);
+  });
+}
+if ($btnZoomIn) {
+  $btnZoomIn.addEventListener("click", () => {
+    if (currentImg) setZoom(cropState.userZoom + 0.01);
+  });
+}
+
 function setZoom(zoomFactor) {
   if (!currentImg) return;
-  const oldScale = cropState.scale;
-  cropState.userZoom = zoomFactor;
-  cropState.scale = cropState.baseScale * cropState.userZoom;
-  $zoomRange.value = zoomFactor;
-  $zoomVal.textContent = `${Math.round(zoomFactor * 100)}%`;
-
-  // 以畫布中心為基準進行等比縮放
-  const cx = $cropCanvas.width / 2;
-  const cy = $cropCanvas.height / 2;
-  cropState.x = cx - (cx - cropState.x) * (cropState.scale / oldScale);
-  cropState.y = cy - (cy - cropState.y) * (cropState.scale / oldScale);
+  const roundedZoom = applyZoomFactorToCrop(cropState, zoomFactor, $cropCanvas.width, $cropCanvas.height);
+  $zoomRange.value = String(roundedZoom);
+  $zoomVal.textContent = `${Math.round(roundedZoom * 100)}%`;
   renderCrop();
+  updateEstimatedFileSize();
 }
 
 $btnRotateLeft.addEventListener("click", () => {
   cropState.rotation = (cropState.rotation - 90 + 360) % 360;
   renderCrop();
+  updateEstimatedFileSize();
 });
 $btnRotateRight.addEventListener("click", () => {
   cropState.rotation = (cropState.rotation + 90) % 360;
   renderCrop();
+  updateEstimatedFileSize();
 });
 $btnResetCrop.addEventListener("click", () => {
   if (currentImg) initImageToCrop(currentImg);
@@ -611,34 +733,7 @@ if ($selFormat) {
 }
 
 function getCroppedCanvas() {
-  const outCanvas = document.createElement("canvas");
-  outCanvas.width = cropState.targetW;
-  outCanvas.height = cropState.targetH;
-  const ctx = outCanvas.getContext("2d");
-
-  // 實心純黑底色，避免 JPEG/MJPEG 編碼產生雜色邊框
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, outCanvas.width, outCanvas.height);
-
-  // 若為圓形遮罩，將圓外裁切為黑色
-  if ($selCropShape.value === "circle") {
-    ctx.beginPath();
-    ctx.arc(outCanvas.width / 2, outCanvas.height / 2, Math.min(outCanvas.width, outCanvas.height) / 2, 0, Math.PI * 2);
-    ctx.clip();
-  }
-
-  const cx = cropState.x + (currentImg.naturalWidth * cropState.scale) / 2;
-  const cy = cropState.y + (currentImg.naturalHeight * cropState.scale) / 2;
-  ctx.translate(cx, cy);
-  ctx.rotate((cropState.rotation * Math.PI) / 180);
-  ctx.drawImage(
-    currentImg,
-    (-currentImg.naturalWidth * cropState.scale) / 2,
-    (-currentImg.naturalHeight * cropState.scale) / 2,
-    currentImg.naturalWidth * cropState.scale,
-    currentImg.naturalHeight * cropState.scale
-  );
-  return outCanvas;
+  return exportCropToCanvas(currentImg, cropState, $selCropShape.value, cropState.targetW, cropState.targetH);
 }
 
 // 執行相片上傳
@@ -1268,6 +1363,759 @@ $btnUploadMedia.addEventListener("click", async () => {
 });
 
 // ==========================================
+// 5B. 多圖輪播製作 AVI 與逐張調整 (JPG/PNG → MJPEG AVI)
+// ==========================================
+let slides = [];
+let nextSlideId = 1;
+let activeSlideIdx = -1;
+let slideshowTargetW = 240;
+let slideshowTargetH = 240;
+let slideDragging = false;
+let slideDragStartX = 0;
+let slideDragStartY = 0;
+let slidePreviewTimer = null;
+let slidePreviewIdx = 0;
+let slideThumbTimer = null;
+let slideEstimateTimer = null;
+let slideEstimateGen = 0;
+
+function getSlideIntervalSeconds() {
+  const v = $selSlideInterval ? parseFloat($selSlideInterval.value) : 1;
+  return Number.isFinite(v) && v >= 0.1 && v <= 10 ? v : 1;
+}
+
+function getActiveSlide() {
+  return activeSlideIdx >= 0 && activeSlideIdx < slides.length ? slides[activeSlideIdx] : null;
+}
+
+function renderSlideThumbDataUrl(slide) {
+  const shape = $selSlideshowShape ? $selSlideshowShape.value : "circle";
+  const cropped = exportCropToCanvas(slide.img, slide.crop, shape, slideshowTargetW, slideshowTargetH);
+  const thumbCanvas = document.createElement("canvas");
+  thumbCanvas.width = 72;
+  thumbCanvas.height = 72;
+  const ctx = thumbCanvas.getContext("2d");
+  ctx.drawImage(cropped, 0, 0, 72, 72);
+  return thumbCanvas.toDataURL("image/png");
+}
+
+function scheduleActiveSlideThumbRefresh() {
+  const slide = getActiveSlide();
+  if (!slide) return;
+  if (slideThumbTimer) clearTimeout(slideThumbTimer);
+  slideThumbTimer = setTimeout(() => {
+    slide.thumbUrl = renderSlideThumbDataUrl(slide);
+    const thumbEl = document.querySelector(`.slide-card[data-slide-id="${slide.id}"] .slide-card-thumb`);
+    if (thumbEl) thumbEl.src = slide.thumbUrl;
+  }, 80);
+}
+
+function stopSlideshowPreview() {
+  if (slidePreviewTimer) {
+    clearInterval(slidePreviewTimer);
+    slidePreviewTimer = null;
+  }
+  if ($btnToggleSlidePreview) {
+    $btnToggleSlidePreview.textContent = t("btnPreviewSlideshowPlay");
+  }
+  if ($slideshowCanvas && slideshowCtx) {
+    renderSlideshowCanvas();
+  }
+  updateSlideshowControlsState();
+}
+
+function startSlideshowPreview() {
+  if (slides.length === 0) return;
+  if (slidePreviewTimer) {
+    clearInterval(slidePreviewTimer);
+    slidePreviewTimer = null;
+  }
+  slidePreviewIdx = activeSlideIdx >= 0 ? activeSlideIdx : 0;
+  const stepPreview = () => {
+    if (slides.length === 0) {
+      stopSlideshowPreview();
+      return;
+    }
+    const idx = slidePreviewIdx % slides.length;
+    renderSlideshowCanvas(idx);
+    if ($slideCounterLabel) {
+      $slideCounterLabel.textContent = t("slideCounterFmt", {
+        idx: idx + 1,
+        total: slides.length,
+        name: slides[idx].fileName,
+      });
+    }
+    slidePreviewIdx = (idx + 1) % slides.length;
+  };
+  stepPreview();
+  const intervalMs = Math.max(100, Math.round(getSlideIntervalSeconds() * 1000));
+  slidePreviewTimer = setInterval(stepPreview, intervalMs);
+  if ($btnToggleSlidePreview) {
+    $btnToggleSlidePreview.textContent = t("btnPreviewSlideshowStop");
+  }
+}
+
+function renderSlideshowCanvas(previewIdx = null) {
+  if (!$slideshowCanvas || !slideshowCtx) return;
+  const idx = previewIdx !== null ? previewIdx : activeSlideIdx;
+  const slide = idx >= 0 && idx < slides.length ? slides[idx] : null;
+  const shape = $selSlideshowShape ? $selSlideshowShape.value : "circle";
+  renderImageWithCrop(
+    slideshowCtx,
+    $slideshowCanvas.width,
+    $slideshowCanvas.height,
+    slide ? slide.img : null,
+    slide ? slide.crop : null,
+    shape,
+    { previewOverlay: true }
+  );
+}
+
+function updateSlideshowControlsState() {
+  const count = slides.length;
+  const cur = getActiveSlide();
+  if ($slideshowDropTip) $slideshowDropTip.style.display = cur ? "none" : "block";
+  if ($btnPrevSlide) $btnPrevSlide.disabled = count <= 1 || activeSlideIdx <= 0;
+  if ($btnNextSlide) $btnNextSlide.disabled = count <= 1 || activeSlideIdx >= count - 1;
+  if ($btnToggleSlidePreview) {
+    $btnToggleSlidePreview.disabled = count === 0;
+    $btnToggleSlidePreview.textContent = slidePreviewTimer ? t("btnPreviewSlideshowStop") : t("btnPreviewSlideshowPlay");
+  }
+  if ($btnClearSlides) $btnClearSlides.disabled = count === 0;
+  if ($btnExportSlideshowAvi) $btnExportSlideshowAvi.disabled = count === 0;
+
+  if ($slideCounterLabel && !slidePreviewTimer) {
+    $slideCounterLabel.textContent = cur
+      ? t("slideCounterFmt", { idx: activeSlideIdx + 1, total: count, name: cur.fileName })
+      : t("slideCounterEmpty");
+  }
+
+  if ($slideshowZoomRange && $slideshowZoomVal) {
+    const z = cur ? cur.crop.userZoom : 1.0;
+    $slideshowZoomRange.value = String(z);
+    $slideshowZoomVal.textContent = `${Math.round(z * 100)}%`;
+  }
+
+  const intervalSec = getSlideIntervalSeconds();
+  if ($slideshowCountDuration) {
+    if (count === 0) {
+      $slideshowCountDuration.textContent = t("slideshowCountDurationEmpty");
+    } else {
+      const totalSecNum = count * intervalSec;
+      const totalSec = Number.isInteger(totalSecNum) ? String(totalSecNum) : totalSecNum.toFixed(1);
+      $slideshowCountDuration.textContent = t("slideshowCountDurationVal", {
+        count,
+        totalSec,
+        intervalSec,
+      });
+    }
+  }
+}
+
+function renderSlideshowFilmstrip() {
+  if (!$slideshowThumbList) return;
+  $slideshowThumbList.innerHTML = "";
+  if (slides.length === 0) {
+    const empty = document.createElement("span");
+    empty.style.color = "var(--text-muted)";
+    empty.style.fontSize = "13px";
+    empty.style.margin = "auto";
+    empty.setAttribute("data-i18n", "slideshowFilmstripEmpty");
+    empty.textContent = t("slideshowFilmstripEmpty");
+    $slideshowThumbList.appendChild(empty);
+    return;
+  }
+
+  slides.forEach((slide, idx) => {
+    const card = document.createElement("div");
+    card.className = `slide-card${idx === activeSlideIdx ? " active" : ""}`;
+    card.setAttribute("data-slide-id", String(slide.id));
+    card.title = slide.fileName;
+
+    const badge = document.createElement("span");
+    badge.className = "slide-card-index";
+    badge.textContent = `#${idx + 1}`;
+
+    const imgEl = document.createElement("img");
+    imgEl.className = "slide-card-thumb";
+    imgEl.src = slide.thumbUrl;
+    imgEl.alt = slide.fileName;
+
+    const nameEl = document.createElement("div");
+    nameEl.className = "slide-card-name";
+    nameEl.textContent = slide.fileName;
+
+    const actions = document.createElement("div");
+    actions.className = "slide-card-actions";
+
+    const btnLeft = document.createElement("button");
+    btnLeft.type = "button";
+    btnLeft.className = "btn-mini";
+    btnLeft.textContent = "◀";
+    btnLeft.title = t("btnSlideMoveLeftTitle");
+    btnLeft.disabled = idx === 0;
+    btnLeft.addEventListener("click", (e) => {
+      e.stopPropagation();
+      moveSlide(idx, -1);
+    });
+
+    const btnRight = document.createElement("button");
+    btnRight.type = "button";
+    btnRight.className = "btn-mini";
+    btnRight.textContent = "▶";
+    btnRight.title = t("btnSlideMoveRightTitle");
+    btnRight.disabled = idx === slides.length - 1;
+    btnRight.addEventListener("click", (e) => {
+      e.stopPropagation();
+      moveSlide(idx, 1);
+    });
+
+    const btnDel = document.createElement("button");
+    btnDel.type = "button";
+    btnDel.className = "btn-mini danger";
+    btnDel.textContent = "✕";
+    btnDel.title = t("btnSlideRemoveTitle");
+    btnDel.addEventListener("click", (e) => {
+      e.stopPropagation();
+      removeSlideAt(idx);
+    });
+
+    actions.appendChild(btnLeft);
+    actions.appendChild(btnRight);
+    actions.appendChild(btnDel);
+
+    card.appendChild(badge);
+    card.appendChild(imgEl);
+    card.appendChild(nameEl);
+    card.appendChild(actions);
+
+    card.addEventListener("click", () => selectSlide(idx));
+    $slideshowThumbList.appendChild(card);
+  });
+}
+
+function selectSlide(idx) {
+  if (idx < 0 || idx >= slides.length) return;
+  if (slidePreviewTimer) stopSlideshowPreview();
+  activeSlideIdx = idx;
+  renderSlideshowCanvas();
+  updateSlideshowControlsState();
+  renderSlideshowFilmstrip();
+  const activeCard = $slideshowThumbList?.querySelector(".slide-card.active");
+  if (activeCard && typeof activeCard.scrollIntoView === "function") {
+    activeCard.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }
+}
+
+function moveSlide(idx, delta) {
+  const target = idx + delta;
+  if (target < 0 || target >= slides.length) return;
+  if (slidePreviewTimer) stopSlideshowPreview();
+  const activeId = getActiveSlide()?.id ?? null;
+  const [moved] = slides.splice(idx, 1);
+  slides.splice(target, 0, moved);
+  if (activeId !== null) {
+    activeSlideIdx = slides.findIndex((s) => s.id === activeId);
+  }
+  renderSlideshowCanvas();
+  renderSlideshowFilmstrip();
+  updateSlideshowControlsState();
+  updateSlideshowEstimate();
+}
+
+function removeSlideAt(idx) {
+  if (idx < 0 || idx >= slides.length) return;
+  if (slidePreviewTimer) stopSlideshowPreview();
+  const [removed] = slides.splice(idx, 1);
+  if (removed?.objectUrl) {
+    try { URL.revokeObjectURL(removed.objectUrl); } catch (_) {}
+  }
+  if (slides.length === 0) {
+    activeSlideIdx = -1;
+  } else if (activeSlideIdx >= slides.length) {
+    activeSlideIdx = slides.length - 1;
+  } else if (idx < activeSlideIdx) {
+    activeSlideIdx--;
+  }
+  renderSlideshowCanvas();
+  renderSlideshowFilmstrip();
+  updateSlideshowControlsState();
+  updateSlideshowEstimate();
+}
+
+function clearAllSlides() {
+  stopSlideshowPreview();
+  for (const s of slides) {
+    if (s.objectUrl) {
+      try { URL.revokeObjectURL(s.objectUrl); } catch (_) {}
+    }
+  }
+  slides = [];
+  activeSlideIdx = -1;
+  renderSlideshowCanvas();
+  renderSlideshowFilmstrip();
+  updateSlideshowControlsState();
+  updateSlideshowEstimate();
+}
+
+async function addSlidesFromFiles(fileList) {
+  const files = Array.from(fileList || []).filter((f) =>
+    f && (f.type.startsWith("image/") || /\.(jpe?g|png|webp|bmp)$/i.test(f.name)) &&
+    !f.type.includes("gif") && !f.name.toLowerCase().endsWith(".gif")
+  );
+  if (files.length === 0) {
+    log(t("logInvalidDropFile"));
+    return;
+  }
+
+  stopSlideshowPreview();
+  const firstNewIdx = slides.length;
+  let added = 0;
+
+  for (const file of files) {
+    try {
+      const { img, objectUrl } = await loadImageFileElement(file);
+      const crop = computeInitialCropState(img, slideshowTargetW, slideshowTargetH);
+      const slide = {
+        id: nextSlideId++,
+        fileName: file.name,
+        objectUrl,
+        img,
+        crop,
+        thumbUrl: "",
+      };
+      slide.thumbUrl = renderSlideThumbDataUrl(slide);
+      slides.push(slide);
+      added++;
+    } catch (err) {
+      log(t("logLoadImageFailed", { msg: `${file.name}: ${err.message}` }));
+    }
+  }
+
+  if (added > 0) {
+    activeSlideIdx = firstNewIdx;
+    renderSlideshowCanvas();
+    renderSlideshowFilmstrip();
+    updateSlideshowControlsState();
+    updateSlideshowEstimate();
+    log(t("logSlidesAdded", { added, total: slides.length }));
+  }
+}
+
+function updateSlideshowTargetResolution() {
+  if (!$slideshowCanvas || !$selSlideshowRes) return;
+  const { targetW, targetH } = parseResolutionValue($selSlideshowRes.value);
+  slideshowTargetW = Math.min(targetW, 359);
+  slideshowTargetH = Math.min(targetH, 359);
+  $slideshowCanvas.width = slideshowTargetW;
+  $slideshowCanvas.height = slideshowTargetH;
+
+  for (const slide of slides) {
+    const oldScale = slide.crop.scale || 1;
+    slide.crop.baseScale = Math.max(slideshowTargetW / slide.img.naturalWidth, slideshowTargetH / slide.img.naturalHeight);
+    slide.crop.scale = slide.crop.baseScale * slide.crop.userZoom;
+    const ratio = slide.crop.scale / oldScale;
+    const cx = slideshowTargetW / 2;
+    const cy = slideshowTargetH / 2;
+    slide.crop.x = cx - (cx - slide.crop.x) * ratio;
+    slide.crop.y = cy - (cy - slide.crop.y) * ratio;
+    slide.thumbUrl = renderSlideThumbDataUrl(slide);
+  }
+
+  renderSlideshowCanvas();
+  renderSlideshowFilmstrip();
+  updateSlideshowControlsState();
+  updateSlideshowEstimate();
+}
+
+function updateSlideshowEstimate() {
+  if (!$slideshowEstimatedSize) return;
+  if (slides.length === 0) {
+    $slideshowEstimatedSize.textContent = "-";
+    $slideshowEstimatedSize.style.color = "#38bdf8";
+    return;
+  }
+
+  const gen = ++slideEstimateGen;
+  if (slideEstimateTimer) clearTimeout(slideEstimateTimer);
+  slideEstimateTimer = setTimeout(async () => {
+    try {
+      const shape = $selSlideshowShape ? $selSlideshowShape.value : "circle";
+      const timing = SuperBandClient.intervalSecToAviTiming(getSlideIntervalSeconds());
+      const perFrameBudget = Math.max(4096, Math.floor((320 * 1024) / slides.length));
+      const jpegs = [];
+      for (const slide of slides) {
+        if (gen !== slideEstimateGen) return;
+        const c = exportCropToCanvas(slide.img, slide.crop, shape, slideshowTargetW, slideshowTargetH);
+        jpegs.push(await client.canvasToBadgeJpeg(c, { quality: 0.85, maxBytes: perFrameBudget }));
+      }
+      if (gen !== slideEstimateGen) return;
+      const avi = SuperBandClient.buildMjpegAvi(jpegs, slideshowTargetW, slideshowTargetH, timing);
+      const kbStr = `${(avi.length / 1024).toFixed(2)} KB`;
+      const chunks = Math.ceil((avi.length + 4) / 200);
+      const { maxAviBytes } = getBadgeMediaLimits();
+      if (client.isConnected && lastFreeStorageKb != null && avi.length > maxAviBytes) {
+        $slideshowEstimatedSize.style.color = "#fbbf24";
+        $slideshowEstimatedSize.textContent = t("slideshowExceedsBudgetWarn", {
+          kb: kbStr,
+          chunks,
+          budgetKb: Math.round(maxAviBytes / 1024),
+        });
+      } else {
+        $slideshowEstimatedSize.style.color = "#38bdf8";
+        $slideshowEstimatedSize.textContent = t("sizeChunks", { kb: kbStr, chunks });
+      }
+    } catch {
+      if (gen === slideEstimateGen && $slideshowEstimatedSize) {
+        $slideshowEstimatedSize.style.color = "#38bdf8";
+        $slideshowEstimatedSize.textContent = t("sizeEstimateFailed");
+      }
+    }
+  }, 180);
+}
+
+async function buildSlideshowAviPayload(maxBytes) {
+  const safeW = Math.min(slideshowTargetW, 359);
+  const safeH = Math.min(slideshowTargetH, 359);
+  const shape = $selSlideshowShape ? $selSlideshowShape.value : "circle";
+  const timing = SuperBandClient.intervalSecToAviTiming(getSlideIntervalSeconds());
+
+  const canvases = slides.map((s) => exportCropToCanvas(s.img, s.crop, shape, safeW, safeH));
+  let lastAvi = null;
+  for (const q of [0.88, 0.78, 0.68, 0.56, 0.44, 0.32]) {
+    const perFrameBudget = Math.max(2048, Math.floor((maxBytes - 640) / canvases.length));
+    const jpegs = [];
+    for (const c of canvases) {
+      jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget }));
+    }
+    lastAvi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, timing);
+    if (lastAvi.length <= maxBytes) {
+      log(t("logSlideshowBuilt", {
+        count: slides.length,
+        intervalSec: timing.intervalSec,
+        w: safeW,
+        h: safeH,
+        kb: (lastAvi.length / 1024).toFixed(2),
+        q,
+      }));
+      return { bytes: lastAvi, width: safeW, height: safeH, timing };
+    }
+  }
+
+  throw new Error(t("errAviTooLargeAfterCompress", {
+    kb: (lastAvi.length / 1024).toFixed(1),
+    budgetKb: Math.round(maxBytes / 1024),
+  }));
+}
+
+function setActiveSlideZoom(zoomFactor) {
+  const cur = getActiveSlide();
+  if (!cur || !$slideshowCanvas) return;
+  if (slidePreviewTimer) stopSlideshowPreview();
+  const roundedZoom = applyZoomFactorToCrop(cur.crop, zoomFactor, $slideshowCanvas.width, $slideshowCanvas.height);
+  if ($slideshowZoomRange) $slideshowZoomRange.value = String(roundedZoom);
+  if ($slideshowZoomVal) $slideshowZoomVal.textContent = `${Math.round(roundedZoom * 100)}%`;
+  renderSlideshowCanvas();
+  scheduleActiveSlideThumbRefresh();
+  updateSlideshowEstimate();
+}
+
+// 綁定多圖輪播交互事件
+if ($btnAddSlides && $fileSlideshowInput) {
+  $btnAddSlides.addEventListener("click", () => $fileSlideshowInput.click());
+  $fileSlideshowInput.addEventListener("change", (e) => {
+    if (e.target.files && e.target.files.length > 0) {
+      addSlidesFromFiles(e.target.files);
+      e.target.value = "";
+    }
+  });
+}
+
+if ($btnClearSlides) {
+  $btnClearSlides.addEventListener("click", clearAllSlides);
+}
+if ($btnPrevSlide) {
+  $btnPrevSlide.addEventListener("click", () => selectSlide(activeSlideIdx - 1));
+}
+if ($btnNextSlide) {
+  $btnNextSlide.addEventListener("click", () => selectSlide(activeSlideIdx + 1));
+}
+if ($btnToggleSlidePreview) {
+  $btnToggleSlidePreview.addEventListener("click", () => {
+    if (slidePreviewTimer) stopSlideshowPreview();
+    else startSlideshowPreview();
+  });
+}
+
+if ($selSlideshowRes) {
+  $selSlideshowRes.addEventListener("change", updateSlideshowTargetResolution);
+}
+if ($selSlideshowShape) {
+  $selSlideshowShape.addEventListener("change", () => {
+    for (const s of slides) s.thumbUrl = renderSlideThumbDataUrl(s);
+    renderSlideshowCanvas();
+    renderSlideshowFilmstrip();
+    updateSlideshowEstimate();
+  });
+}
+if ($selSlideInterval) {
+  $selSlideInterval.addEventListener("change", () => {
+    updateSlideshowControlsState();
+    updateSlideshowEstimate();
+    if (slidePreviewTimer) startSlideshowPreview();
+  });
+}
+
+if ($slideshowDropArea) {
+  ['dragenter', 'dragover'].forEach((eventName) => {
+    $slideshowDropArea.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      $slideshowDropArea.style.borderColor = "var(--accent)";
+      $slideshowDropArea.style.background = "rgba(6, 182, 212, 0.08)";
+    });
+  });
+
+  ['dragleave', 'dragend'].forEach((eventName) => {
+    $slideshowDropArea.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      $slideshowDropArea.style.borderColor = "var(--card-border)";
+      $slideshowDropArea.style.background = "#090d16";
+    });
+  });
+
+  $slideshowDropArea.addEventListener("drop", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    $slideshowDropArea.style.borderColor = "var(--card-border)";
+    $slideshowDropArea.style.background = "#090d16";
+
+    const dropped = [];
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      dropped.push(...e.dataTransfer.files);
+    } else if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      for (const item of e.dataTransfer.items) {
+        if (item.kind === "file") {
+          const f = item.getAsFile();
+          if (f) dropped.push(f);
+        }
+      }
+    }
+    addSlidesFromFiles(dropped);
+  });
+
+  $slideshowDropArea.addEventListener("click", () => {
+    if (slides.length === 0 && $fileSlideshowInput) {
+      $fileSlideshowInput.click();
+    }
+  });
+
+  $slideshowDropArea.addEventListener("mousedown", (e) => {
+    const cur = getActiveSlide();
+    if (!cur) return;
+    if (slidePreviewTimer) stopSlideshowPreview();
+    slideDragging = true;
+    slideDragStartX = e.clientX - cur.crop.x;
+    slideDragStartY = e.clientY - cur.crop.y;
+  });
+
+  $slideshowDropArea.addEventListener("wheel", (e) => {
+    const cur = getActiveSlide();
+    if (!cur) return;
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.01 : -0.01;
+    setActiveSlideZoom(cur.crop.userZoom + delta);
+  }, { passive: false });
+}
+
+window.addEventListener("mousemove", (e) => {
+  if (!slideDragging) return;
+  const cur = getActiveSlide();
+  if (!cur) {
+    slideDragging = false;
+    return;
+  }
+  cur.crop.x = e.clientX - slideDragStartX;
+  cur.crop.y = e.clientY - slideDragStartY;
+  renderSlideshowCanvas();
+});
+
+window.addEventListener("mouseup", () => {
+  if (!slideDragging) return;
+  slideDragging = false;
+  const cur = getActiveSlide();
+  if (cur) {
+    cur.thumbUrl = renderSlideThumbDataUrl(cur);
+    const thumbEl = document.querySelector(`.slide-card[data-slide-id="${cur.id}"] .slide-card-thumb`);
+    if (thumbEl) thumbEl.src = cur.thumbUrl;
+    updateSlideshowEstimate();
+  }
+});
+
+if ($slideshowZoomRange) {
+  $slideshowZoomRange.addEventListener("input", (e) => {
+    setActiveSlideZoom(parseFloat(e.target.value));
+  });
+}
+if ($btnSlideZoomOut) {
+  $btnSlideZoomOut.addEventListener("click", () => {
+    const cur = getActiveSlide();
+    if (cur) setActiveSlideZoom(cur.crop.userZoom - 0.01);
+  });
+}
+if ($btnSlideZoomIn) {
+  $btnSlideZoomIn.addEventListener("click", () => {
+    const cur = getActiveSlide();
+    if (cur) setActiveSlideZoom(cur.crop.userZoom + 0.01);
+  });
+}
+if ($btnSlideRotateLeft) {
+  $btnSlideRotateLeft.addEventListener("click", () => {
+    const cur = getActiveSlide();
+    if (!cur) return;
+    if (slidePreviewTimer) stopSlideshowPreview();
+    cur.crop.rotation = (cur.crop.rotation - 90 + 360) % 360;
+    renderSlideshowCanvas();
+    cur.thumbUrl = renderSlideThumbDataUrl(cur);
+    renderSlideshowFilmstrip();
+    updateSlideshowEstimate();
+  });
+}
+if ($btnSlideRotateRight) {
+  $btnSlideRotateRight.addEventListener("click", () => {
+    const cur = getActiveSlide();
+    if (!cur) return;
+    if (slidePreviewTimer) stopSlideshowPreview();
+    cur.crop.rotation = (cur.crop.rotation + 90) % 360;
+    renderSlideshowCanvas();
+    cur.thumbUrl = renderSlideThumbDataUrl(cur);
+    renderSlideshowFilmstrip();
+    updateSlideshowEstimate();
+  });
+}
+if ($btnResetSlideCrop) {
+  $btnResetSlideCrop.addEventListener("click", () => {
+    const cur = getActiveSlide();
+    if (!cur) return;
+    if (slidePreviewTimer) stopSlideshowPreview();
+    cur.crop = computeInitialCropState(cur.img, slideshowTargetW, slideshowTargetH);
+    renderSlideshowCanvas();
+    cur.thumbUrl = renderSlideThumbDataUrl(cur);
+    renderSlideshowFilmstrip();
+    updateSlideshowControlsState();
+    updateSlideshowEstimate();
+  });
+}
+
+if ($btnExportSlideshowAvi) {
+  $btnExportSlideshowAvi.addEventListener("click", async () => {
+    hideNotice();
+    if (slides.length === 0) {
+      showNotice("warn", { titleKey: "noticeNoSlidesTitle", bodyKey: "noticeNoSlidesBody" });
+      return;
+    }
+
+    try {
+      $btnExportSlideshowAvi.disabled = true;
+      showProgress(true, t("progressEncodingSlideshow", { count: slides.length }));
+      const exportBudget = Math.max(512 * 1024, slides.length * 48 * 1024);
+      const { bytes, timing } = await buildSlideshowAviPayload(exportBudget);
+
+      const rawName = ($txtSlideshowName?.value || "slideshow_01").trim() || "slideshow_01";
+      const fileName = rawName.toLowerCase().endsWith(".avi") ? rawName : `${rawName}.avi`;
+      const blob = new Blob([bytes], { type: "video/x-msvideo" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+      }, 5000);
+
+      const kb = (bytes.length / 1024).toFixed(2);
+      log(t("logSlideshowExported", { filename: fileName, kb }));
+      showNotice("success", {
+        titleKey: "noticeSlideshowExportSuccessTitle",
+        bodyKey: "noticeSlideshowExportSuccessBody",
+        bodyParams: {
+          filename: fileName,
+          count: slides.length,
+          intervalSec: timing.intervalSec,
+          kb,
+        },
+      });
+    } catch (err) {
+      log(t("logSlideshowUploadFailed", { msg: err.message }));
+      showNotice("error", { titleKey: "noticeSlideshowFailedTitle", rawBody: err.message });
+    } finally {
+      $btnExportSlideshowAvi.disabled = slides.length === 0;
+      showProgress(false);
+    }
+  });
+}
+
+if ($btnUploadSlideshow) {
+  $btnUploadSlideshow.addEventListener("click", async () => {
+    hideNotice();
+    if (!client.isConnected) {
+      showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodySlideshow" });
+      return;
+    }
+    if (slides.length === 0) {
+      showNotice("warn", { titleKey: "noticeNoSlidesTitle", bodyKey: "noticeNoSlidesBody" });
+      return;
+    }
+
+    try {
+      $btnUploadSlideshow.disabled = true;
+      showProgress(true, t("progressEncodingSlideshow", { count: slides.length }));
+      const { maxAviBytes } = getBadgeMediaLimits();
+      const { bytes, width, height, timing } = await buildSlideshowAviPayload(maxAviBytes);
+
+      const fileName = ($txtSlideshowName?.value || "slideshow_01").trim() || "slideshow_01";
+      const slot = 0;
+
+      log(t("logSlideshowUploadStart", {
+        name: fileName,
+        count: slides.length,
+        intervalSec: timing.intervalSec,
+        w: width,
+        h: height,
+        bytes: bytes.length,
+        slot,
+      }));
+      await client.uploadDialImage(bytes, (sent, total, pct) => {
+        updateProgress(sent, total, pct, t("progressUploadingSlideshow", { pct }));
+      }, { slot, isAvi: 1, custom: 0, dialId: client.activeDialId, fontPos: 0 });
+
+      showProgress(false);
+      log(t("logSlideshowUploadSuccess"));
+      await refreshStorageSpace();
+      showNotice("success", {
+        titleKey: "noticeSlideshowUploadSuccessTitle",
+        bodyKey: "noticeSlideshowUploadSuccessBody",
+        bodyParams: {
+          name: fileName,
+          count: slides.length,
+          intervalSec: timing.intervalSec,
+        },
+      });
+    } catch (err) {
+      log(t("logSlideshowUploadFailed", { msg: err.message }));
+      showNotice("error", { titleKey: "noticeSlideshowFailedTitle", rawBody: err.message });
+    } finally {
+      $btnUploadSlideshow.disabled = !client.isConnected;
+      showProgress(false);
+    }
+  });
+}
+
+// ==========================================
 // 6. 進度條輔助函式與頁籤切換
 // ==========================================
 function showProgress(show, statusText = "") {
@@ -1290,6 +2138,9 @@ function updateProgress(sent, total, pct, statusText) {
 
 // 頁籤切換
 function switchTab(targetId) {
+  if (targetId !== "tab-slideshow" && typeof stopSlideshowPreview === "function" && slidePreviewTimer) {
+    stopSlideshowPreview();
+  }
   document.querySelectorAll(".tab-btn").forEach((b) => {
     b.classList.toggle("active", b.getAttribute("data-tab") === targetId);
   });
@@ -1373,6 +2224,15 @@ function applyLanguage() {
   if (currentImg) {
     updateEstimatedFileSize();
   }
+
+  if ($selSlideInterval) {
+    Array.from($selSlideInterval.options).forEach((opt) => {
+      opt.textContent = t("slideIntervalOptFmt", { sec: opt.value });
+    });
+  }
+  if (typeof renderSlideshowFilmstrip === "function") renderSlideshowFilmstrip();
+  if (typeof updateSlideshowControlsState === "function") updateSlideshowControlsState();
+  if (typeof updateSlideshowEstimate === "function") updateSlideshowEstimate();
 }
 
 function handleLangChange(nextLang) {
@@ -1397,3 +2257,4 @@ if (startupLang.source === "query") {
 }
 
 updateCropTargetResolution();
+if (typeof updateSlideshowTargetResolution === "function") updateSlideshowTargetResolution();

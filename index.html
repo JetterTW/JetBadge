@@ -282,6 +282,7 @@
       border-bottom: 1px solid var(--card-border);
       margin-bottom: 16px;
       gap: 8px;
+      flex-wrap: wrap;
     }
     .tab-btn {
       background: none;
@@ -478,6 +479,142 @@
       background: #334155;
       color: var(--text);
     }
+
+    /* 1% Zoom nudge buttons & Multi-photo slideshow filmstrip */
+    .zoom-nudge-btn {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.3;
+      min-width: 26px;
+      justify-content: center;
+    }
+    .zoom-nudge-btn:hover:not(:disabled) {
+      background: #334155;
+      transform: none;
+    }
+
+    .slide-nav-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+    .slide-counter {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--accent);
+      text-align: center;
+      flex: 1;
+      min-width: 140px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #slideshowCanvas {
+      max-width: 100%;
+      max-height: 380px;
+      background: transparent;
+      display: block;
+    }
+
+    .filmstrip-wrap {
+      margin-top: 18px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .filmstrip-list {
+      display: flex;
+      gap: 10px;
+      overflow-x: auto;
+      padding: 4px 2px 6px;
+      min-height: 112px;
+      align-items: center;
+    }
+    .slide-card {
+      flex: 0 0 auto;
+      width: 92px;
+      background: var(--card-bg);
+      border: 2px solid var(--card-border);
+      border-radius: 8px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      position: relative;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .slide-card:hover {
+      border-color: var(--primary);
+    }
+    .slide-card.active {
+      border-color: var(--accent);
+      background: rgba(6, 182, 212, 0.12);
+    }
+    .slide-card-index {
+      position: absolute;
+      top: 4px;
+      left: 4px;
+      background: rgba(15, 23, 42, 0.85);
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+    .slide-card-thumb {
+      width: 68px;
+      height: 68px;
+      border-radius: 6px;
+      object-fit: cover;
+      background: #000000;
+      display: block;
+    }
+    .slide-card-name {
+      width: 100%;
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+    }
+    .slide-card-actions {
+      display: flex;
+      gap: 3px;
+      width: 100%;
+      justify-content: center;
+    }
+    .btn-mini {
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 10px;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    .btn-mini:hover:not(:disabled) {
+      background: #334155;
+      color: var(--text);
+      transform: none;
+    }
+    .btn-mini.danger:hover:not(:disabled) {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: #ffffff;
+    }
   </style>
 </head>
 <body>
@@ -562,6 +699,7 @@
       <div class="tab-header">
         <button class="tab-btn active" data-tab="tab-photo" data-i18n="tabPhoto">📸 相片裁切與上傳 (JPG/PNG)</button>
         <button class="tab-btn" data-tab="tab-video" data-i18n="tabVideo">🎬 GIF / MP4 / AVI 動畫與影片</button>
+        <button class="tab-btn" data-tab="tab-slideshow" data-i18n="tabSlideshow">🖼️ 多圖輪播製作 AVI</button>
       </div>
 
       <div id="uploadNotice" class="notice-banner" role="status" aria-live="polite">
@@ -589,7 +727,9 @@
             <div class="cropper-tools">
               <div class="slider-group">
                 <span data-i18n="labelZoom">縮放:</span>
-                <input type="range" id="zoomRange" min="0.2" max="3.0" step="0.05" value="1.0">
+                <button id="btnZoomOut" type="button" class="zoom-nudge-btn" data-i18n-title="btnZoomOutTitle" title="縮小 1%">−</button>
+                <input type="range" id="zoomRange" min="0.4" max="4.0" step="0.01" value="1.0">
+                <button id="btnZoomIn" type="button" class="zoom-nudge-btn" data-i18n-title="btnZoomInTitle" title="放大 1%">+</button>
                 <span id="zoomVal">100%</span>
               </div>
               <div class="btn-group">
@@ -705,6 +845,143 @@
           </div>
         </div>
       </div>
+
+      <!-- Tab 3: 多圖輪播製作 AVI -->
+      <div class="tab-pane" id="tab-slideshow">
+        <div class="grid-2">
+          <!-- 左欄：逐張位置與縮放微調畫布 -->
+          <div>
+            <div class="slide-nav-bar">
+              <button id="btnPrevSlide" type="button" class="btn-outline" data-i18n="btnPrevSlide" style="padding: 5px 10px; font-size: 12px;" disabled>◀ 上一張</button>
+              <span id="slideCounterLabel" class="slide-counter">尚未加入圖片 (0 張)</span>
+              <button id="btnNextSlide" type="button" class="btn-outline" data-i18n="btnNextSlide" style="padding: 5px 10px; font-size: 12px;" disabled>下一張 ▶</button>
+              <button id="btnToggleSlidePreview" type="button" class="btn-outline" data-i18n="btnPreviewSlideshowPlay" style="padding: 5px 10px; font-size: 12px;" disabled>▶ 預覽輪播</button>
+            </div>
+
+            <div class="cropper-box" id="slideshowDropArea">
+              <canvas id="slideshowCanvas" width="240" height="240"></canvas>
+              <div class="dropzone-tip" id="slideshowDropTip">
+                <span data-i18n="slideshowDropTip1">點擊「加入多張圖片」或拖曳多張圖片 (JPG/PNG) 至此處</span><br>
+                <span data-i18n="slideshowDropTip2">可點選下方縮圖逐一拖曳位置、滑輪/滑桿縮放 (1% 單位)</span>
+              </div>
+            </div>
+
+            <div class="cropper-tools">
+              <div class="slider-group">
+                <span data-i18n="labelZoom">縮放:</span>
+                <button id="btnSlideZoomOut" type="button" class="zoom-nudge-btn" data-i18n-title="btnZoomOutTitle" title="縮小 1%">−</button>
+                <input type="range" id="slideshowZoomRange" min="0.4" max="4.0" step="0.01" value="1.0">
+                <button id="btnSlideZoomIn" type="button" class="zoom-nudge-btn" data-i18n-title="btnZoomInTitle" title="放大 1%">+</button>
+                <span id="slideshowZoomVal">100%</span>
+              </div>
+              <div class="btn-group">
+                <button id="btnSlideRotateLeft" type="button" class="btn-outline" style="padding: 6px 10px;" data-i18n-title="btnRotateLeftTitle" title="向左旋轉90度">↺ 90°</button>
+                <button id="btnSlideRotateRight" type="button" class="btn-outline" style="padding: 6px 10px;" data-i18n-title="btnRotateRightTitle" title="向右旋轉90度">↻ 90°</button>
+                <button id="btnResetSlideCrop" type="button" class="btn-outline" style="padding: 6px 10px;" data-i18n="btnResetSlideCrop">重設此張</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右欄：間隔設定、輸出規格與匯出/上傳 -->
+          <div>
+            <div class="form-group">
+              <label data-i18n="labelSelectPhoto">選擇或更換圖片檔案</label>
+              <input type="file" id="fileSlideshowInput" accept="image/jpeg,image/png,image/webp" multiple style="display: none;" />
+              <div style="display: flex; gap: 8px;">
+                <button id="btnAddSlides" type="button" class="btn-outline" data-i18n="btnAddSlides" style="flex: 1; justify-content: center;">
+                  ➕ 加入多張圖片 (JPG/PNG)
+                </button>
+                <button id="btnClearSlides" type="button" class="btn-outline" data-i18n="btnClearSlides" style="justify-content: center;" disabled>
+                  🗑️ 清空
+                </button>
+              </div>
+            </div>
+
+            <div class="grid-2" style="gap: 12px;">
+              <div class="form-group">
+                <label data-i18n="labelCropShape">徽章裁切遮罩形狀</label>
+                <select id="selSlideshowShape">
+                  <option value="circle" data-i18n="optCircleMask">圓形徽章 (圓形電子吧唧，預覽外圍半透明黑遮罩)</option>
+                  <option value="square" data-i18n="optSquareMask">方形徽章 (方形/矩形螢幕)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label data-i18n="labelSlideshowRes">目標輸出寬高 (MJPEG AVI)</label>
+                <select id="selSlideshowRes">
+                  <option value="240x240" selected data-i18n="optRes240x240">240 x 240 (標準圓形/方形吧唧)</option>
+                  <option value="359x359" data-i18n="optRes359x359Note">359 x 359 (高解析上限，韌體最大支援)</option>
+                  <option value="240x280" data-i18n="optRes240x280">240 x 280 (長方形螢幕)</option>
+                  <option value="128x128" data-i18n="optRes128x128">128 x 128 (小尺寸點陣)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label data-i18n="labelSlideInterval">圖與圖間隔時間 (秒 / 每張停留)</label>
+              <select id="selSlideInterval">
+                <option value="0.1">0.1 秒</option>
+                <option value="0.2">0.2 秒</option>
+                <option value="0.3">0.3 秒</option>
+                <option value="0.4">0.4 秒</option>
+                <option value="0.5">0.5 秒</option>
+                <option value="0.6">0.6 秒</option>
+                <option value="0.7">0.7 秒</option>
+                <option value="0.8">0.8 秒</option>
+                <option value="0.9">0.9 秒</option>
+                <option value="1" selected>1 秒</option>
+                <option value="2">2 秒</option>
+                <option value="3">3 秒</option>
+                <option value="4">4 秒</option>
+                <option value="5">5 秒</option>
+                <option value="6">6 秒</option>
+                <option value="7">7 秒</option>
+                <option value="8">8 秒</option>
+                <option value="9">9 秒</option>
+                <option value="10">10 秒</option>
+              </select>
+            </div>
+
+            <div style="background: #0f172a; padding: 12px; border-radius: 8px; margin: 12px 0; font-size: 13px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span data-i18n="labelSlideshowCountDuration" style="color: var(--text-muted);">總張數 / 輪播時長:</span>
+                <strong id="slideshowCountDuration" style="color: #cbd5e1;">0 張</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span data-i18n="labelEstimatedAviSize" style="color: var(--text-muted);">預估 AVI 檔案大小:</span>
+                <strong id="slideshowEstimatedSize" style="color: #38bdf8;">-</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span data-i18n="labelRemainingSpace" style="color: var(--text-muted);">徽章剩餘可用空間:</span>
+                <strong id="slideshowRemainingSpace" style="color: var(--accent);">-</strong>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label data-i18n="labelSlideshowName">匯出 / 上傳檔名</label>
+              <input type="text" id="txtSlideshowName" value="slideshow_01" data-i18n-placeholder="placeholderSlideshowName" placeholder="例如：my_slideshow" />
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <button id="btnExportSlideshowAvi" type="button" class="btn-outline" data-i18n="btnExportSlideshowAvi" style="justify-content: center; padding: 12px; font-size: 14px;" disabled>
+                💾 匯出成 AVI 檔案
+              </button>
+              <button id="btnUploadSlideshow" type="button" data-i18n="btnUploadSlideshow" style="justify-content: center; padding: 12px; font-size: 14px;" disabled>
+                🚀 轉成 AVI 並上傳至徽章
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 底部縮圖佇列 -->
+        <div class="filmstrip-wrap">
+          <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;" data-i18n="slideshowFilmstripHeader">
+            多圖順序與逐張微調清單 (點擊縮圖切換並調整每張大小與位置)
+          </div>
+          <div id="slideshowThumbList" class="filmstrip-list">
+            <span data-i18n="slideshowFilmstripEmpty" style="color: var(--text-muted); font-size: 13px; margin: auto;">尚未加入圖片 — 請點擊上方按鈕或拖曳多張 JPG / PNG 圖片</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 傳輸進度與即時日誌 -->
@@ -728,6 +1005,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=35"></script>
+  <script type="module" src="./app.js?v=36"></script>
 </body>
 </html>
