@@ -186,6 +186,7 @@ export const STRINGS = {
     logSlideshowUploadFailed: "多圖 AVI 上傳/匯出失敗: {msg}",
     noticeSlideshowFailedTitle: "多圖 AVI 處理失敗",
     slideshowExceedsBudgetWarn: "{kb} ({chunks} 塊，超過剩餘空間 {budgetKb} KB)",
+    sizeChunksAutoQ: "{kb} ({chunks} 塊 • 依徽章格式最佳化 q={q})",
 
     // BLE Client (baji.js)
     profileBg02: "BG02 / DG01 (SuperBand專屬通訊通道)",
@@ -459,6 +460,7 @@ export const STRINGS = {
     logSlideshowUploadFailed: "Slideshow AVI export/upload failed: {msg}",
     noticeSlideshowFailedTitle: "Slideshow AVI Failed",
     slideshowExceedsBudgetWarn: "{kb} (~{chunks} chunks, exceeds {budgetKb} KB free space)",
+    sizeChunksAutoQ: "{kb} (~{chunks} chunks • badge-fit q={q})",
 
     // BLE Client (baji.js)
     profileBg02: "BG02 / DG01 (SuperBand Exclusive Channel)",

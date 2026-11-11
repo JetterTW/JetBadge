@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v37)
+ * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v38)
  * Verified against BG02 / oem_DG01 (JieLi AC695N / BR28) Firmware:
  * - Service 7E400001-B5A3-F393-E0A9-E50E24DCCA9D
  * - Write   7E400002-B5A3-F393-E0A9-E50E24DCCA9D
  * - Notify  7E400003-B5A3-F393-E0A9-E50E24DCCA9D
  */
-import { t } from "./i18n.js?v=37";
+import { t } from "./i18n.js?v=38";
 
 export const BleProfiles = [
   {
@@ -718,7 +718,7 @@ export class SuperBandClient {
   async canvasToBadgeJpeg(canvas, options = {}) {
     const maxBytes = options.maxBytes ?? 96 * 1024;
     const requestedQuality = options.quality ?? 0.90;
-    const qualities = [requestedQuality, 0.85, 0.78, 0.70, 0.60, 0.45]
+    const qualities = [requestedQuality, 0.85, 0.78, 0.70, 0.60, 0.45, 0.35, 0.25]
       .filter((q, idx, arr) => q <= requestedQuality && arr.indexOf(q) === idx);
 
     const flatCanvas = document.createElement("canvas");
