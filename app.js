@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=39";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=39";
+import { SuperBandClient } from "./baji.js?v=40";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=40";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -163,6 +163,10 @@ client.onDisconnected = () => {
 let observedTotalFlashKb = 0;
 let lastFreeStorageKb = null;
 
+function getBadgeMaxDimension() {
+  return client.protocolKind === "zrun_e05" ? 512 : 359;
+}
+
 // ==========================================
 // 1. 藍牙連線與設備管理
 // ==========================================
@@ -179,7 +183,7 @@ function updateUIConnectionState(connected, info = null) {
     $btnConnect.disabled = true;
     $btnDisconnect.disabled = false;
     $btnRefreshInfo.disabled = false;
-    $btnFindMe.disabled = false;
+    $btnFindMe.disabled = client.protocolKind === "zrun_e05";
     $btnUploadCropped.disabled = false;
     $btnUploadMedia.disabled = false;
     if ($btnUploadSlideshow) $btnUploadSlideshow.disabled = false;
@@ -219,6 +223,9 @@ $btnConnect.addEventListener("click", async () => {
     const res = await client.connect(acceptAll);
     updateUIConnectionState(true, res);
     $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
+    if ($selFormat) {
+      $selFormat.value = res.protocolKind === "zrun_e05" ? "jpeg" : "avi";
+    }
 
     // 自動讀取設備資訊與剩餘空間
     await refreshDeviceInfo();
@@ -302,9 +309,14 @@ async function refreshDeviceInfo() {
     if (info.detectedResolution.includes("240 x 240")) {
       $selResolution.value = "240x240";
       if ($selSlideshowRes) $selSlideshowRes.value = "240x240";
+    } else if (info.detectedResolution.includes("368 x 368")) {
+      $selResolution.value = "368x368";
+      if ($selSlideshowRes) $selSlideshowRes.value = "368x368";
     } else if (info.detectedResolution.includes("360 x 360")) {
       $selResolution.value = "360x360";
-      if ($selSlideshowRes) $selSlideshowRes.value = "359x359";
+      if ($selSlideshowRes) {
+        $selSlideshowRes.value = client.protocolKind === "zrun_e05" ? "360x360" : "359x359";
+      }
     } else if (info.detectedResolution.includes("240 x 280")) {
       $selResolution.value = "240x280";
       if ($selSlideshowRes) $selSlideshowRes.value = "240x280";
@@ -712,9 +724,10 @@ function updateEstimatedFileSize() {
   estimateTimer = setTimeout(async () => {
     try {
       const outCanvas = getCroppedCanvas();
+      const singleMaxBytes = client.protocolKind === "zrun_e05" ? 128 * 1024 : 96 * 1024;
       const encoded = format === "jpeg"
-        ? await client.canvasToBadgeJpeg(outCanvas, { quality: 0.90, maxBytes: 96 * 1024 })
-        : await client.canvasToBadgeAvi(outCanvas, { quality: 0.90, maxBytes: 96 * 1024, fps: 5 });
+        ? await client.canvasToBadgeJpeg(outCanvas, { quality: 0.90, maxBytes: singleMaxBytes })
+        : await client.canvasToBadgeAvi(outCanvas, { quality: 0.90, maxBytes: singleMaxBytes, fps: 5 });
       if (gen !== estimateGeneration || !currentImg) return;
       const kbStr = `${(encoded.length / 1024).toFixed(2)} KB`;
       const chunks = Math.ceil((encoded.length + 4) / 200);
@@ -751,26 +764,31 @@ $btnUploadCropped.addEventListener("click", async () => {
   try {
     $btnUploadCropped.disabled = true;
     const format = $selFormat ? $selFormat.value : "avi";
+    const isZrun = client.protocolKind === "zrun_e05";
+    if (isZrun && format === "rgb565") {
+      throw new Error(t("errRgb565UnsupportedZrun"));
+    }
     const slot = 0;
     const outCanvas = getCroppedCanvas();
+    const singleMaxBytes = isZrun ? 128 * 1024 : 96 * 1024;
 
     let bytes;
     let isAvi = 1;
     if (format === "avi") {
       showProgress(true, t("progressEncodingAvi"));
-      bytes = await client.canvasToBadgeAvi(outCanvas, { quality: 0.90, maxBytes: 96 * 1024, fps: 5 });
+      bytes = await client.canvasToBadgeAvi(outCanvas, { quality: 0.90, maxBytes: singleMaxBytes, fps: 5 });
       isAvi = 1;
       log(t("logPrepareAvi", {
         w: outCanvas.width,
         h: outCanvas.height,
         bytes: bytes.length,
-        totalBytes: bytes.length + 4,
+        totalBytes: bytes.length + (isZrun ? 0 : 4),
       }));
     } else if (format === "jpeg") {
       showProgress(true, t("progressEncodingJpeg"));
-      bytes = await client.canvasToBadgeJpeg(outCanvas, { quality: 0.90, maxBytes: 96 * 1024 });
+      bytes = await client.canvasToBadgeJpeg(outCanvas, { quality: 0.90, maxBytes: singleMaxBytes });
       isAvi = 0;
-      log(t("logPrepareJpeg", { bytes: bytes.length }));
+      log(t(isZrun ? "logPrepareZrunJpeg" : "logPrepareJpeg", { bytes: bytes.length }));
     } else {
       showProgress(true, t("progressEncodingRgb565"));
       bytes = client.canvasToRgb565(outCanvas);
@@ -782,11 +800,15 @@ $btnUploadCropped.addEventListener("click", async () => {
       }));
     }
 
-    log(t("logPhotoUploadStart", {
-      slot,
-      ext: isAvi ? ".avi" : "",
-      isAvi,
-    }));
+    if (isZrun) {
+      log(t("logZrunPhotoUploadStart", { ext: isAvi ? "avi" : "jpg" }));
+    } else {
+      log(t("logPhotoUploadStart", {
+        slot,
+        ext: isAvi ? ".avi" : "",
+        isAvi,
+      }));
+    }
     await client.uploadDialImage(bytes, (sent, total, pct) => {
       updateProgress(sent, total, pct, t("progressUploadingPhoto", { pct }));
     }, { slot, isAvi, custom: 0, dialId: client.activeDialId, fontPos: 0 });
@@ -823,11 +845,15 @@ let lastMediaState = {
 };
 
 function getBadgeMediaLimits() {
-  const targetW = Math.min(client.screenWidth || cropState.targetW || 240, 359);
-  const targetH = Math.min(client.screenHeight || cropState.targetH || 240, 359);
+  const maxDim = getBadgeMaxDimension();
+  const isZrun = client.protocolKind === "zrun_e05";
+  const targetW = Math.min(client.screenWidth || cropState.targetW || 240, maxDim);
+  const targetH = Math.min(client.screenHeight || cropState.targetH || 240, maxDim);
+  const capBytes = isZrun ? 2000 * 1024 : 350 * 1024;
+  const fallbackBytes = isZrun ? 1536 * 1024 : 220 * 1024;
   const maxAviBytes = lastFreeStorageKb != null && lastFreeStorageKb > 16
-    ? Math.max(16 * 1024, Math.min(350 * 1024, Math.floor((lastFreeStorageKb - 8) * 1024)))
-    : 220 * 1024;
+    ? Math.max(16 * 1024, Math.min(capBytes, Math.floor((lastFreeStorageKb - 8) * 1024)))
+    : fallbackBytes;
   return { targetW, targetH, maxAviBytes };
 }
 
@@ -883,8 +909,9 @@ function renderMediaDetails() {
   if (!$mediaDetails || !lastMediaState.selected) return;
   if (lastMediaState.aviInfo) {
     const info = lastMediaState.aviInfo;
+    const maxDim = getBadgeMaxDimension();
     const { targetW, targetH, maxAviBytes } = getBadgeMediaLimits();
-    const needsResize = info.width > targetW || info.height > targetH || info.width > 359 || info.height > 359;
+    const needsResize = info.width > targetW || info.height > targetH || info.width > maxDim || info.height > maxDim;
     const needsShrink = lastMediaState.sizeBytes > maxAviBytes;
     const fpsNum = info.fps >= 1
       ? info.fps.toFixed(1).replace(/\.0$/, "")
@@ -1122,8 +1149,10 @@ function drawSourceCoverToBadgeCanvas(source, srcW, srcH, targetW, targetH) {
 }
 
 async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 220 * 1024) {
-  const safeW = Math.min(targetW, 359);
-  const safeH = Math.min(targetH, 359);
+  const maxDim = getBadgeMaxDimension();
+  const zrunHdrReserve = client.protocolKind === "zrun_e05" ? 5900 : 640;
+  const safeW = Math.min(targetW, maxDim);
+  const safeH = Math.min(targetH, maxDim);
   const rawBuf = new Uint8Array(await file.arrayBuffer());
   const isRiffAvi = rawBuf.length >= 12 &&
     rawBuf[0] === 0x52 && rawBuf[1] === 0x49 && rawBuf[2] === 0x46 && rawBuf[3] === 0x46 &&
@@ -1149,14 +1178,14 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
         ? { scale: parsed.scale, rate: parsed.rate, fps: parsed.fps }
         : parsed.fps;
 
-      // 路徑 1：尺寸 <= 徽章上限且 <= 359×359，先嘗試無損清理重封裝（移除 JUNK/vprp/APP2/COM）
+      // 路徑 1：尺寸 <= 徽章上限且 <= maxDim，先嘗試無損清理重封裝（移除多餘中繼資料，並視協定封裝 AVI）
       const dimsOk = parsed.width > 0 && parsed.height > 0 &&
         parsed.width <= safeW && parsed.height <= safeH &&
-        parsed.width <= 359 && parsed.height <= 359;
+        parsed.width <= maxDim && parsed.height <= maxDim;
       if (dimsOk) {
         try {
-          const cleanFrames = parsed.frames.map((f) => SuperBandClient.sanitizeBadgeJpeg(f));
-          const remuxed = SuperBandClient.buildMjpegAvi(cleanFrames, parsed.width, parsed.height, timing);
+          const cleanFrames = parsed.frames.map((f) => SuperBandClient.sanitizeBadgeJpeg(f, { maxDimension: maxDim }));
+          const remuxed = client.buildProtocolAvi(cleanFrames, parsed.width, parsed.height, timing);
           if (remuxed.length <= maxAviBytes) {
             log(t("logAviRemuxLossless", { bytes: remuxed.length }));
             return { bytes: remuxed, width: parsed.width, height: parsed.height };
@@ -1207,12 +1236,12 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
 
       let lastAvi = null;
       for (const q of [0.85, 0.76, 0.65, 0.52, 0.40, 0.30]) {
-        const perFrameBudget = Math.max(2048, Math.floor((maxAviBytes - 640) / canvases.length));
+        const perFrameBudget = Math.max(2048, Math.floor((maxAviBytes - zrunHdrReserve) / canvases.length));
         const jpegs = [];
         for (const c of canvases) {
-          jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget }));
+          jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget, maxDimension: maxDim }));
         }
-        lastAvi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, outTiming);
+        lastAvi = client.buildProtocolAvi(jpegs, safeW, safeH, outTiming);
         if (lastAvi.length <= maxAviBytes) {
           log(t("logAviOptimizedDone", {
             bytes: lastAvi.length,
@@ -1297,12 +1326,12 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
   }
 
   for (const q of [0.78, 0.65, 0.50, 0.38]) {
-    const perFrameBudget = Math.max(3072, Math.floor((maxAviBytes - 512) / canvases.length));
+    const perFrameBudget = Math.max(3072, Math.floor((maxAviBytes - zrunHdrReserve) / canvases.length));
     const jpegs = [];
     for (const c of canvases) {
-      jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget }));
+      jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget, maxDimension: maxDim }));
     }
-    const avi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, fps);
+    const avi = client.buildProtocolAvi(jpegs, safeW, safeH, fps);
     if (avi.length <= maxAviBytes || q === 0.38) {
       return { bytes: avi, width: safeW, height: safeH };
     }
@@ -1775,9 +1804,10 @@ async function addSlidesFromFiles(fileList) {
 
 function updateSlideshowTargetResolution() {
   if (!$slideshowCanvas || !$selSlideshowRes) return;
+  const maxDim = getBadgeMaxDimension();
   const { targetW, targetH } = parseResolutionValue($selSlideshowRes.value);
-  slideshowTargetW = Math.min(targetW, 359);
-  slideshowTargetH = Math.min(targetH, 359);
+  slideshowTargetW = Math.min(targetW, maxDim);
+  slideshowTargetH = Math.min(targetH, maxDim);
   $slideshowCanvas.width = slideshowTargetW;
   $slideshowCanvas.height = slideshowTargetH;
 
@@ -1800,6 +1830,7 @@ function updateSlideshowTargetResolution() {
 }
 
 function getSlideshowBadgeTargetSize() {
+  const maxDim = getBadgeMaxDimension();
   const capW = client.isConnected && client.screenWidth
     ? Math.min(client.screenWidth, slideshowTargetW)
     : slideshowTargetW;
@@ -1807,8 +1838,8 @@ function getSlideshowBadgeTargetSize() {
     ? Math.min(client.screenHeight, slideshowTargetH)
     : slideshowTargetH;
   return {
-    safeW: Math.min(capW || 240, 359),
-    safeH: Math.min(capH || 240, 359),
+    safeW: Math.min(capW || 240, maxDim),
+    safeH: Math.min(capH || 240, maxDim),
   };
 }
 
@@ -1861,8 +1892,9 @@ async function buildSlideshowAviPayload(maxBytes = Infinity, options = {}) {
   const shape = $selSlideshowShape ? $selSlideshowShape.value : "circle";
   const timing = SuperBandClient.intervalSecToAviTiming(getSlideIntervalSeconds());
 
+  const maxDim = getBadgeMaxDimension();
   const canvases = slides.map((s) => exportCropToCanvas(s.img, s.crop, shape, safeW, safeH));
-  const aviOverhead = 240 + canvases.length * 26;
+  const aviOverhead = (client.protocolKind === "zrun_e05" ? 5900 : 240) + canvases.length * 26;
   const perFrameBudget = hasFiniteBudget
     ? Math.max(1536, Math.floor((budget - aviOverhead) / canvases.length))
     : 96 * 1024;
@@ -1873,10 +1905,10 @@ async function buildSlideshowAviPayload(maxBytes = Infinity, options = {}) {
     const jpegs = [];
     for (const c of canvases) {
       if (isCancelled && isCancelled()) return null;
-      jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget }));
+      jpegs.push(await client.canvasToBadgeJpeg(c, { quality: q, maxBytes: perFrameBudget, maxDimension: maxDim }));
     }
     if (isCancelled && isCancelled()) return null;
-    lastAvi = SuperBandClient.buildMjpegAvi(jpegs, safeW, safeH, timing);
+    lastAvi = client.buildProtocolAvi(jpegs, safeW, safeH, timing);
     if (!hasFiniteBudget || lastAvi.length <= budget) {
       if (!silent) {
         log(t("logSlideshowBuilt", {

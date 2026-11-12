@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 Smart E-Badge BLE Protocol Client (v39)
- * Verified against BG02 / oem_DG01 (JieLi AC695N / BR28) Firmware:
- * - Service 7E400001-B5A3-F393-E0A9-E50E24DCCA9D
- * - Write   7E400002-B5A3-F393-E0A9-E50E24DCCA9D
- * - Notify  7E400003-B5A3-F393-E0A9-E50E24DCCA9D
+ * SuperBand & BG02 / DG01 + ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v40)
+ * Verified against:
+ * - BG02 / oem_DG01 (SuperBand NUS 7E400001-B5A3-F393-E0A9-E50E24DCCA9D)
+ * - E05 / E87 (ZRun / JieLi RCSP AE00 + C2E6FD00-E966-1000-8000-BEF9C223DF6A)
  */
-import { t } from "./i18n.js?v=39";
+import { t } from "./i18n.js?v=40";
+import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=40";
 
 export const BleProfiles = [
   {
@@ -63,6 +63,8 @@ export class SuperBandClient {
     this.writeChar = null;
     this.notifyChar = null;
     this.activeProfile = null;
+    this.protocolKind = "superband";
+    this.zrunSession = null;
     this.rxBuffer = new Uint8Array(0);
     this.waiters = [];
     this.screenWidth = 240;
@@ -76,6 +78,9 @@ export class SuperBandClient {
   }
 
   get isConnected() {
+    if (this.protocolKind === "zrun_e05") {
+      return !!(this.server && this.server.connected && this.zrunSession && this.zrunSession.isAttached);
+    }
     return !!(this.server && this.server.connected && this.writeChar);
   }
 
@@ -84,8 +89,13 @@ export class SuperBandClient {
       throw new Error(t("errWebBleUnsupported"));
     }
 
-    const allServices = BleProfiles.map(p => p.serviceUuid);
-    allServices.push(DIS_SERVICE_UUID, BAS_SERVICE_UUID);
+    const superbandServices = BleProfiles.map(p => p.serviceUuid);
+    const allServices = Array.from(new Set([
+      ...superbandServices,
+      ...ZRUN_E05_SERVICES.DISCOVERY_SERVICE_UUIDS,
+      DIS_SERVICE_UUID,
+      BAS_SERVICE_UUID,
+    ]));
 
     const options = {
       optionalServices: allServices,
@@ -96,7 +106,14 @@ export class SuperBandClient {
     } else if (namePrefix) {
       options.filters = [{ namePrefix }];
     } else {
-      options.filters = allServices.map(s => ({ services: [s] }));
+      options.filters = [
+        ...superbandServices.map(s => ({ services: [s] })),
+        { services: [ZRUN_E05_SERVICES.AE_SERVICE_UUID] },
+        { services: [ZRUN_E05_SERVICES.FD_SERVICE_UUID] },
+        { namePrefix: "E05" },
+        { namePrefix: "E87" },
+        { namePrefix: "L8" },
+      ];
     }
 
     const modeStr = acceptAllDevices ? t("scanModeAll") : t("scanModeService");
@@ -104,90 +121,141 @@ export class SuperBandClient {
     this.device = await navigator.bluetooth.requestDevice(options);
     this.log(t("logSelectedDevice", { name: this.device.name || t("unnamedDevice"), id: this.device.id }));
 
-    this.device.addEventListener("gattserverdisconnected", () => {
-      this.log(t("logBleLinkDropped"));
-      this.cleanup();
-      if (this.onDisconnected) {
-        try { this.onDisconnected(); } catch (e) {}
-      }
-    });
-
-    this.log(t("logConnectingGatt"));
-    this.server = await this.device.gatt.connect();
-    this.log(t("logGattConnected"));
+    if (!this._boundDisconnectHandler) {
+      this._boundDisconnectHandler = () => {
+        this.log(t("logBleLinkDropped"));
+        this.cleanup();
+        if (this.onDisconnected) {
+          try { this.onDisconnected(); } catch (e) {}
+        }
+      };
+      this.device.addEventListener("gattserverdisconnected", this._boundDisconnectHandler);
+    }
 
     let matched = false;
-    for (const profile of BleProfiles) {
+    let lastError = null;
+    const maxAttempts = 3;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        const service = await this.server.getPrimaryService(profile.serviceUuid);
-        let charA = null;
-        let charB = null;
-        try { charA = await service.getCharacteristic(profile.writeUuid); } catch (e) {}
-        try { charB = await service.getCharacteristic(profile.notifyUuid); } catch (e) {}
+        this.log(t("logConnectingGatt"));
+        this.server = await this.device.gatt.connect();
+        this.log(t("logGattConnected"));
 
-        let write = null;
-        let notify = null;
+        let discoveredServices = [];
+        if (typeof this.server.getPrimaryServices === "function") {
+          try {
+            discoveredServices = await this.server.getPrimaryServices();
+          } catch (_) {}
+        }
 
-        if (charA && (charA.properties.write || charA.properties.writeWithoutResponse)) write = charA;
-        if (charB && (charB.properties.notify || charB.properties.indicate)) notify = charB;
-
-        if (!write && charB && (charB.properties.write || charB.properties.writeWithoutResponse)) write = charB;
-        if (!notify && charA && (charA.properties.notify || charA.properties.indicate)) notify = charA;
-
-        if (write && !notify && (write.properties.notify || write.properties.indicate)) notify = write;
-
-        if (write && notify) {
-          this.writeChar = write;
-          this.notifyChar = notify;
-          this.activeProfile = profile;
-
-          await this.notifyChar.startNotifications();
-          this.notifyChar.addEventListener("characteristicvaluechanged", (event) => {
-            const dv = event.target.value;
-            const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-            this.handleIncomingBytes(bytes);
-          });
-
-          if (profile.auxNotifyUuid) {
-            try {
-              const aux = await service.getCharacteristic(profile.auxNotifyUuid);
-              if (aux && (aux.properties.notify || aux.properties.indicate)) {
-                await aux.startNotifications();
-                aux.addEventListener("characteristicvaluechanged", (event) => {
-                  const dv = event.target.value;
-                  const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
-                  this.handleIncomingBytes(bytes);
-                });
-                this.log(t("logAuxNotifyEnabled", { uuid: profile.auxNotifyUuid }));
-              }
-            } catch (e) {}
-          }
-
-          const profileLabel = profile.nameKey ? t(profile.nameKey) : profile.name;
-          this.log(t("logProfileMatched", { name: profileLabel }));
-          this.log(t("logWriteUuid", { uuid: write.uuid }));
-          this.log(t("logNotifyUuid", { uuid: notify.uuid }));
+        const zrunSession = new ZrunE05Session((m) => this.log(m));
+        const isZrun = await zrunSession.tryAttach(this.device, this.server, discoveredServices);
+        if (isZrun) {
+          this.protocolKind = "zrun_e05";
+          this.zrunSession = zrunSession;
+          this.screenWidth = zrunSession.screenWidth || 360;
+          this.screenHeight = zrunSession.screenHeight || 360;
+          this.activeProfile = {
+            id: "ZRUN_E05",
+            nameKey: "profileZrunE05",
+            name: "ZRun / E05 / E87 (JieLi RCSP + AE00)",
+          };
           matched = true;
           break;
         }
+
+        for (const profile of BleProfiles) {
+          try {
+            const service = await this.server.getPrimaryService(profile.serviceUuid);
+            let charA = null;
+            let charB = null;
+            try { charA = await service.getCharacteristic(profile.writeUuid); } catch (e) {}
+            try { charB = await service.getCharacteristic(profile.notifyUuid); } catch (e) {}
+
+            let write = null;
+            let notify = null;
+
+            if (charA && (charA.properties.write || charA.properties.writeWithoutResponse)) write = charA;
+            if (charB && (charB.properties.notify || charB.properties.indicate)) notify = charB;
+
+            if (!write && charB && (charB.properties.write || charB.properties.writeWithoutResponse)) write = charB;
+            if (!notify && charA && (charA.properties.notify || charA.properties.indicate)) notify = charA;
+
+            if (write && !notify && (write.properties.notify || write.properties.indicate)) notify = write;
+
+            if (write && notify) {
+              this.protocolKind = "superband";
+              this.zrunSession = null;
+              this.writeChar = write;
+              this.notifyChar = notify;
+              this.activeProfile = profile;
+
+              await this.notifyChar.startNotifications();
+              this.notifyChar.addEventListener("characteristicvaluechanged", (event) => {
+                const dv = event.target.value;
+                const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+                this.handleIncomingBytes(bytes);
+              });
+
+              if (profile.auxNotifyUuid) {
+                try {
+                  const aux = await service.getCharacteristic(profile.auxNotifyUuid);
+                  if (aux && (aux.properties.notify || aux.properties.indicate)) {
+                    await aux.startNotifications();
+                    aux.addEventListener("characteristicvaluechanged", (event) => {
+                      const dv = event.target.value;
+                      const bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+                      this.handleIncomingBytes(bytes);
+                    });
+                    this.log(t("logAuxNotifyEnabled", { uuid: profile.auxNotifyUuid }));
+                  }
+                } catch (e) {}
+              }
+
+              const profileLabel = profile.nameKey ? t(profile.nameKey) : profile.name;
+              this.log(t("logProfileMatched", { name: profileLabel }));
+              this.log(t("logSuperbandAutoDetected", { profile: profileLabel }));
+              this.log(t("logWriteUuid", { uuid: write.uuid }));
+              this.log(t("logNotifyUuid", { uuid: notify.uuid }));
+              matched = true;
+              break;
+            }
+          } catch (err) {
+            // 嘗試下一個 profile
+          }
+        }
+        if (matched) break;
+        break; // Services read cleanly without matching either protocol; no retry needed
       } catch (err) {
-        // 嘗試下一個 profile
+        lastError = err;
+        if (attempt < maxAttempts && (!this.server || !this.server.connected)) {
+          await new Promise(r => setTimeout(r, 400 * attempt));
+          continue;
+        }
+        throw err;
       }
     }
 
     if (!matched) {
       this.cleanup();
-      throw new Error(t("errNoMatchingProfile"));
+      throw lastError || new Error(t("errNoMatchingProfile"));
     }
 
     return {
-      deviceName: this.device.name || "SuperBand Badge",
+      deviceName: this.device.name || (this.protocolKind === "zrun_e05" ? "E05 Badge" : "SuperBand Badge"),
       profileName: this.activeProfile.nameKey ? t(this.activeProfile.nameKey) : this.activeProfile.name,
       profileKey: this.activeProfile.nameKey || null,
+      protocolKind: this.protocolKind,
     };
   }
 
   cleanup() {
+    if (this.zrunSession) {
+      try { this.zrunSession.cleanup(); } catch (_) {}
+      this.zrunSession = null;
+    }
+    this.protocolKind = "superband";
     this.server = null;
     this.writeChar = null;
     this.notifyChar = null;
@@ -200,6 +268,9 @@ export class SuperBandClient {
   }
 
   async disconnect() {
+    if (this.zrunSession) {
+      try { await this.zrunSession.disconnect(); } catch (e) {}
+    }
     if (this.notifyChar) {
       try { await this.notifyChar.stopNotifications(); } catch (e) {}
     }
@@ -393,6 +464,15 @@ export class SuperBandClient {
 
   // --- 業務指令：讀取設備資訊、電池與 Flash 剩餘空間 ---
   async getDeviceInfo() {
+    if (this.protocolKind === "zrun_e05" && this.zrunSession) {
+      const info = await this.zrunSession.getDeviceInfo();
+      if (this.zrunSession.screenWidth > 0 && this.zrunSession.screenHeight > 0) {
+        this.screenWidth = this.zrunSession.screenWidth;
+        this.screenHeight = this.zrunSession.screenHeight;
+      }
+      return info;
+    }
+
     this.log(t("logReadingDeviceInfo"));
 
     let mfg = "-";
@@ -526,6 +606,9 @@ export class SuperBandClient {
   // --- 業務指令：單獨查詢真實剩餘可用 Flash 空間 (CMD=32, SUB=4) ---
   async getRemainingSpace() {
     if (!this.isConnected) throw new Error(t("errNotConnected"));
+    if (this.protocolKind === "zrun_e05" && this.zrunSession) {
+      return await this.zrunSession.getRemainingSpace();
+    }
     this.log(t("logQuerySpace"));
     const spaceFrame = this.encodeCdFrame(32, 4, new Uint8Array(0));
     const waitSpace = this.awaitFrame(f => f.cmd === 32 && f.sub === 4, 2500);
@@ -566,7 +649,8 @@ export class SuperBandClient {
    * Baseline SOF0 (0xFFC0)、3 通道 YCbCr、8-bit DQT (ID 0/1, <=512B)、
    * DHT (0x00/0x01/0x10/0x11, <=512B)、寬高 <=359、並移除冗餘 APP1..15/COM 區段。
    */
-  static sanitizeBadgeJpeg(jpegBytes) {
+  static sanitizeBadgeJpeg(jpegBytes, options = {}) {
+    const maxDimension = options.maxDimension ?? 359;
     const src = jpegBytes instanceof Uint8Array ? jpegBytes : new Uint8Array(jpegBytes);
     if (src.length < 4 || src[0] !== 0xFF || src[1] !== 0xD8) {
       throw new Error(t("errJpegInvalidSoi"));
@@ -595,7 +679,7 @@ export class SuperBandClient {
       pos = payloadEnd;
 
       if (marker === 0xC0) {
-        info = SuperBandClient._validateBadgeSof0(payload);
+        info = SuperBandClient._validateBadgeSof0(payload, maxDimension);
       } else if (marker === 0xDB) {
         SuperBandClient._validateBadgeDqt(payload);
       } else if (marker === 0xC4) {
@@ -624,7 +708,7 @@ export class SuperBandClient {
     throw new Error(t("errJpegMissingSosOrEoi"));
   }
 
-  static _validateBadgeSof0(payload) {
+  static _validateBadgeSof0(payload, maxDimension = 359) {
     if (payload.length > 512 || payload.length < 6) {
       throw new Error(t("errJpegSof0Len"));
     }
@@ -638,8 +722,8 @@ export class SuperBandClient {
     if (payload.length < 15) {
       throw new Error(t("errJpegSof0Len"));
     }
-    if (width < 1 || height < 1 || width > 359 || height > 359) {
-      throw new Error(t("errJpegResLimit", { w: width, h: height }));
+    if (width < 1 || height < 1 || width > maxDimension || height > maxDimension) {
+      throw new Error(t("errJpegResLimit", { w: width, h: height, max: maxDimension }));
     }
     const ySamp = payload[7];
     const cbSamp = payload[10];
@@ -717,6 +801,7 @@ export class SuperBandClient {
    */
   async canvasToBadgeJpeg(canvas, options = {}) {
     const maxBytes = options.maxBytes ?? 96 * 1024;
+    const maxDimension = options.maxDimension ?? (this.protocolKind === "zrun_e05" ? 512 : 359);
     const requestedQuality = options.quality ?? 0.90;
     const qualities = [requestedQuality, 0.85, 0.78, 0.70, 0.60, 0.45, 0.35, 0.25]
       .filter((q, idx, arr) => q <= requestedQuality && arr.indexOf(q) === idx);
@@ -734,7 +819,7 @@ export class SuperBandClient {
       const blob = await new Promise((resolve) => flatCanvas.toBlob(resolve, "image/jpeg", q));
       if (!blob) throw new Error(t("errJpegEncodeFailed"));
       const raw = new Uint8Array(await blob.arrayBuffer());
-      lastBytes = SuperBandClient.sanitizeBadgeJpeg(raw);
+      lastBytes = SuperBandClient.sanitizeBadgeJpeg(raw, { maxDimension });
       if (lastBytes.length <= maxBytes) return lastBytes;
     }
     return lastBytes;
@@ -1049,16 +1134,27 @@ export class SuperBandClient {
   }
 
   /**
-   * 將單張 Canvas 轉碼並封裝為單影格 MJPEG .avi，供 DG01/BG02 /bgp_wa%d.avi 路徑原生解碼顯示。
+   * 依目前連線協定選擇對應的 MJPEG .avi 封裝器（BG02 精簡封裝 / ZRun E05 完整 vprp+JUNK 封裝）。
+   */
+  buildProtocolAvi(jpegFrames, width, height, timing = 5) {
+    if (this.protocolKind === "zrun_e05") {
+      return buildZrunMjpgAvi(jpegFrames, width, height, timing);
+    }
+    return SuperBandClient.buildMjpegAvi(jpegFrames, width, height, timing);
+  }
+
+  /**
+   * 將單張 Canvas 轉碼並封裝為單影格 MJPEG .avi，供徽章原生解碼顯示。
    */
   async canvasToBadgeAvi(canvas, options = {}) {
     const maxBytes = options.maxBytes ?? 96 * 1024;
     const fps = options.fps ?? 5;
+    const hdrReserve = this.protocolKind === "zrun_e05" ? 6000 : 260;
     const jpegBytes = await this.canvasToBadgeJpeg(canvas, {
       ...options,
-      maxBytes: Math.max(4096, maxBytes - 260),
+      maxBytes: Math.max(4096, maxBytes - hdrReserve),
     });
-    return SuperBandClient.buildMjpegAvi([jpegBytes], canvas.width, canvas.height, fps);
+    return this.buildProtocolAvi([jpegBytes], canvas.width, canvas.height, fps);
   }
 
   /**
@@ -1120,6 +1216,9 @@ export class SuperBandClient {
   // --- 業務指令：尋找與喚醒徽章 ---
   async findMe() {
     if (!this.isConnected) throw new Error(t("errNotConnected"));
+    if (this.protocolKind === "zrun_e05") {
+      throw new Error(t("errFindMeUnsupportedZrun"));
+    }
     this.log(t("logFindMeCmd"));
     const buf = this.encodeCdFrame(18, 11, new Uint8Array([1]));
     await this.sendRaw(buf);
@@ -1141,6 +1240,9 @@ export class SuperBandClient {
    */
   uploadDialImage(rawFileBytes, onProgress = null, options = {}) {
     if (!this.isConnected) throw new Error(t("errNotConnected"));
+    if (this.protocolKind === "zrun_e05" && this.zrunSession) {
+      return this.zrunSession.uploadFile(rawFileBytes, onProgress, options);
+    }
 
     const rawArr = rawFileBytes instanceof Uint8Array ? rawFileBytes : new Uint8Array(rawFileBytes);
     const looksLikeAvi = rawArr.length >= 12 &&
