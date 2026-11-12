@@ -1,11 +1,11 @@
 /**
- * ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v40)
+ * ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v42)
  * Based on JieLi AC697 / RCSP reverse-engineered protocol (MIT references:
  * hybridherbst/web-bluetooth-e87 & jumpingmushroom/e87_badge):
  * - Image/Auth Service: 0000AE00-0000-1000-8000-00805F9B34FB (Write AE01, Notify AE02)
  * - Control Service:    C2E6FD00-E966-1000-8000-BEF9C223DF6A (Write FD02, Notify FD01/FD03/FD05)
  */
-import { t } from "./i18n.js?v=41";
+import { t } from "./i18n.js?v=42";
 
 export const ZRUN_E05_SERVICES = {
   AE_SERVICE_UUID: "0000ae00-0000-1000-8000-00805f9b34fb",
@@ -1013,10 +1013,10 @@ export class ZrunE05Session {
 
     try {
       // Phase 1: reset auth flag
-      await sendFe(0xc0, 0x06, Uint8Array.of(0x00, 0x01));
+      await sendFe(0xc0, 0x06, Uint8Array.of(0x02, 0x00, 0x01));
       seqCounter = 0x01;
       try { await writeCharacteristic(this.controlChar, hexToBytes("9EBD0B600D0003")); } catch (_) {}
-      try { await this._waitFrame(uploadQueue, (f) => f.cmd === 0x06, 900, "ack 0x06"); } catch (_) {}
+      try { await this._waitFrame(uploadQueue, (f) => f.cmd === 0x06, 2500, "ack 0x06"); } catch (_) {}
 
       // Phase 2: FD02 time sync & session control
       const now = new Date();
@@ -1032,7 +1032,7 @@ export class ZrunE05Session {
         await writeCharacteristic(this.controlChar, hexToBytes("9E200816010001"));
         await sleep(20);
         await writeCharacteristic(this.controlChar, hexToBytes("9EB50B29010080"));
-        await sleep(150);
+        await sleep(180);
       } catch (_) {}
 
       // Phase 3 & 4: best-effort 0x03 & 0x07 queries
@@ -1041,7 +1041,7 @@ export class ZrunE05Session {
         await writeCharacteristic(this.controlChar, hexToBytes("9ED30BC6010001"));
         await sleep(20);
         await writeCharacteristic(this.controlChar, hexToBytes("9E3008200200FF07"));
-        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x03, 1200, "ack 0x03");
+        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x03, 2500, "ack 0x03");
       } catch (_) {}
 
       try {
@@ -1049,20 +1049,25 @@ export class ZrunE05Session {
         await writeCharacteristic(this.controlChar, hexToBytes("9E2B08FF02002200"));
         await sleep(30);
         await writeCharacteristic(this.controlChar, hexToBytes("9E2D08FF02002400"));
-        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x07, 1200, "ack 0x07");
+        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x07, 2500, "ack 0x07");
       } catch (_) {}
 
       // Phase 5: FD02 bootstrap
       try {
         await writeCharacteristic(this.controlChar, hexToBytes("9EB50B29010080"));
-        await sleep(250);
+        await sleep(300);
         await writeCharacteristic(this.controlChar, hexToBytes("9ED30BC6010001"));
         try {
-          await this._waitRaw(uploadQueue, (r) => r.length >= 5 && r[0] === 0x9e && (r[3] === 0xc7 || r[2] === 0xc7), 1500, "FD01 C7");
+          await this._waitRaw(uploadQueue, (r) => r.length >= 5 && r[0] === 0x9e && (r[3] === 0xc7 || r[2] === 0xc7), 2500, "FD01 C7");
         } catch (_) {}
         await writeCharacteristic(this.controlChar, hexToBytes("9EF40BDC01000C"));
         try {
-          await this._waitRaw(uploadQueue, (r) => r.length >= 4 && r[0] === 0x9e && r[1] === 0xe6, 1200, "FD03 ready");
+          await this._waitRaw(
+            uploadQueue,
+            (r) => r.length >= 4 && r[0] === 0x9e && (r[1] === 0xe6 || (r.length >= 7 && r[3] === 0xff && r[6] === 0xdc)),
+            2500,
+            "FD03 ready"
+          );
         } catch (_) {}
       } catch (_) {}
 
@@ -1181,7 +1186,6 @@ export class ZrunE05Session {
           "initial E05 window ack"
         );
       } catch (_) {
-        this.log(t("logZrunDebugTrace", { trace: recentRxTrace.join(" | ") || "none" }));
         await abortSession();
         throw new Error(t("errZrunNoWindowAck", { sent: 0, total: payloadBytes.length }));
       }
@@ -1240,7 +1244,6 @@ export class ZrunE05Session {
             "E05 window ack / file complete / close"
           );
         } catch (_) {
-          this.log(t("logZrunDebugTrace", { trace: recentRxTrace.join(" | ") || "none" }));
           await abortSession();
           throw new Error(t("errZrunNoWindowAck", {
             sent: Math.min(payloadBytes.length, maxOffsetDelivered || totalBytesSent),
@@ -1266,6 +1269,11 @@ export class ZrunE05Session {
 
         currentAck = nextFrame;
       }
+    } catch (err) {
+      if (!cancelRequested()) {
+        this.log(t("logZrunDebugTrace", { trace: recentRxTrace.join(" | ") || "none" }));
+      }
+      throw err;
     } finally {
       fileCompleteAutoRespond = false;
       for (const c of this.notifyChars) {

@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=41";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=41";
+import { SuperBandClient } from "./baji.js?v=42";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=42";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
