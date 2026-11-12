@@ -4,8 +4,8 @@
  * - BG02 / oem_DG01 (SuperBand NUS 7E400001-B5A3-F393-E0A9-E50E24DCCA9D)
  * - E05 / E87 (ZRun / JieLi RCSP AE00 + C2E6FD00-E966-1000-8000-BEF9C223DF6A)
  */
-import { t } from "./i18n.js?v=40";
-import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=40";
+import { t } from "./i18n.js?v=41";
+import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=41";
 
 export const BleProfiles = [
   {

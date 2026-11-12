@@ -5,7 +5,7 @@
  * - Image/Auth Service: 0000AE00-0000-1000-8000-00805F9B34FB (Write AE01, Notify AE02)
  * - Control Service:    C2E6FD00-E966-1000-8000-BEF9C223DF6A (Write FD02, Notify FD01/FD03/FD05)
  */
-import { t } from "./i18n.js?v=40";
+import { t } from "./i18n.js?v=41";
 
 export const ZRUN_E05_SERVICES = {
   AE_SERVICE_UUID: "0000ae00-0000-1000-8000-00805f9b34fb",
@@ -318,6 +318,23 @@ export function parseFeFrame(raw) {
   return { flag, cmd, length, body };
 }
 
+export function splitFePackets(raw) {
+  if (!raw || raw.length < 8) return [raw];
+  if (parseFeFrame(raw)) return [raw];
+  const out = [];
+  for (let i = 0; i <= raw.length - 8; i++) {
+    if (raw[i] === 0xfe && raw[i + 1] === 0xdc && raw[i + 2] === 0xba) {
+      const length = (raw[i + 5] << 8) | raw[i + 6];
+      const end = i + 7 + length;
+      if (end < raw.length && raw[end] === 0xef) {
+        out.push(raw.subarray(i, end + 1));
+        i = end;
+      }
+    }
+  }
+  return out.length ? out : [raw];
+}
+
 export function buildQixFrame(cmd, payload, flag) {
   const inner = new Uint8Array(4 + payload.length);
   inner[0] = flag & 0xff;
@@ -614,15 +631,17 @@ export class ZrunE05Session {
       const val = target?.value;
       if (!val) return;
       const raw = new Uint8Array(val.buffer.slice(val.byteOffset, val.byteOffset + val.byteLength));
-      const frame = parseFeFrame(raw);
-      if (frame && (frame.flag & 0xc0) === 0xc0 && frame.cmd !== 0x20 && frame.cmd !== 0x1c && frame.cmd !== 0x1d) {
-        const deviceSeq = frame.body[0] ?? 0;
-        const resp = buildFeFrame(0x00, frame.cmd, Uint8Array.of(0x00, deviceSeq));
-        writeCharacteristic(this.writeChar, resp).catch(() => {});
-        return;
+      for (const pkt of splitFePackets(raw)) {
+        const frame = parseFeFrame(pkt);
+        if (frame && (frame.flag & 0xc0) === 0xc0 && frame.cmd !== 0x20 && frame.cmd !== 0x1c && frame.cmd !== 0x1d) {
+          const deviceSeq = frame.body[0] ?? 0;
+          const resp = buildFeFrame(0x00, frame.cmd, Uint8Array.of(0x00, deviceSeq));
+          writeCharacteristic(this.writeChar, resp).catch(() => {});
+          continue;
+        }
+        this.notificationQueue.push(pkt);
+        if (this.notificationQueue.length > 250) this.notificationQueue.shift();
       }
-      this.notificationQueue.push(raw);
-      if (this.notificationQueue.length > 250) this.notificationQueue.shift();
     };
 
     for (const c of this.notifyChars) {
@@ -796,15 +815,16 @@ export class ZrunE05Session {
           this.screenWidth = w;
           this.screenHeight = h;
         }
-        this.freeMemoryBytes = memory > 0 ? memory : null;
+        const memKb = memory > 0 ? (memory < 65536 ? memory : memory / 1024) : null;
+        this.freeMemoryBytes = memKb != null ? Math.round(memKb * 1024) : null;
         this.log(t("logZrunScreenInfo", {
           w: width || w || 360,
           h: height || h || 360,
           pw: pictureWidth || w || 360,
           ph: pictureHeight || h || 360,
-          mem: memory > 0 ? `${(memory / 1024).toFixed(1)} KB` : "-",
+          mem: memKb != null ? `${memKb.toFixed(1)} KB` : "-",
         }));
-        return { width, height, pictureWidth, pictureHeight, memory };
+        return { width, height, pictureWidth, pictureHeight, memory, freeKb: memKb };
       }
     } catch (_) {}
     return null;
@@ -853,8 +873,8 @@ export class ZrunE05Session {
     if (!this.isAttached) throw new Error(t("errNotConnected"));
     await this.ensureAuth();
     const screen = await this.getScreenInfo();
-    if (screen && screen.memory > 0) {
-      return screen.memory / 1024;
+    if (screen && screen.freeKb > 0) {
+      return screen.freeKb;
     }
     return null;
   }
@@ -885,7 +905,7 @@ export class ZrunE05Session {
 
     const screen = await this.getScreenInfo();
     const batt = await this.getBatteryLevel();
-    const freeKb = screen && screen.memory > 0 ? screen.memory / 1024 : null;
+    const freeKb = screen && screen.freeKb > 0 ? screen.freeKb : null;
 
     const protoDesc = batt != null
       ? `ZRun RCSP (AE00 • ${batt}%)`
@@ -933,11 +953,26 @@ export class ZrunE05Session {
     this.log(t("logZrunUploadStart", { bytes: payloadBytes.length, ext }));
 
     const uploadQueue = [];
+    const recentRxTrace = [];
+    const recordRxTrace = (uuid, raw) => {
+      const tag = normUuid(uuid).slice(-4).toUpperCase();
+      const fe = parseFeFrame(raw);
+      const entry = fe
+        ? `${tag}:FE[f=${fe.flag.toString(16).padStart(2, "0")},c=${fe.cmd.toString(16).padStart(2, "0")},b=${toHex(fe.body.subarray(0, 12))}]`
+        : `${tag}:RAW(${raw.length})[${toHex(raw.subarray(0, 14))}]`;
+      recentRxTrace.push(entry);
+      if (recentRxTrace.length > 18) recentRxTrace.shift();
+    };
+
     const onMirror = (event) => {
       const val = event.target?.value;
       if (!val) return;
-      uploadQueue.push(new Uint8Array(val.buffer.slice(val.byteOffset, val.byteOffset + val.byteLength)));
-      if (uploadQueue.length > 300) uploadQueue.shift();
+      const raw = new Uint8Array(val.buffer.slice(val.byteOffset, val.byteOffset + val.byteLength));
+      for (const pkt of splitFePackets(raw)) {
+        recordRxTrace(event.target?.uuid || "", pkt);
+        uploadQueue.push(pkt);
+        if (uploadQueue.length > 300) uploadQueue.shift();
+      }
     };
 
     let fileCompleteAutoRespond = false;
@@ -947,12 +982,15 @@ export class ZrunE05Session {
       const val = event.target?.value;
       if (!val) return;
       const raw = new Uint8Array(val.buffer.slice(val.byteOffset, val.byteOffset + val.byteLength));
-      const frame = parseFeFrame(raw);
-      if (frame && frame.cmd === 0x20 && frame.flag === 0xc0) {
-        fileCompleteHandled = true;
-        const deviceSeq = frame.body[0] ?? 0;
-        const respFrame = buildFeFrame(0x00, 0x20, this._buildFilePathResponse(deviceSeq, ext));
-        writeCharacteristic(this.writeChar, respFrame).catch(() => {});
+      for (const pkt of splitFePackets(raw)) {
+        const frame = parseFeFrame(pkt);
+        if (frame && frame.cmd === 0x20 && frame.flag === 0xc0) {
+          fileCompleteHandled = true;
+          const deviceSeq = frame.body[0] ?? 0;
+          const respFrame = buildFeFrame(0x00, 0x20, this._buildFilePathResponse(deviceSeq, ext));
+          writeCharacteristic(this.writeChar, respFrame).catch(() => {});
+          break;
+        }
       }
     };
 
@@ -975,10 +1013,10 @@ export class ZrunE05Session {
 
     try {
       // Phase 1: reset auth flag
-      await sendFe(0xc0, 0x06, Uint8Array.of(0x02, 0x00, 0x01));
+      await sendFe(0xc0, 0x06, Uint8Array.of(0x00, 0x01));
       seqCounter = 0x01;
       try { await writeCharacteristic(this.controlChar, hexToBytes("9EBD0B600D0003")); } catch (_) {}
-      try { await this._waitFrame(uploadQueue, (f) => f.cmd === 0x06, 2500, "ack 0x06"); } catch (_) {}
+      try { await this._waitFrame(uploadQueue, (f) => f.cmd === 0x06, 900, "ack 0x06"); } catch (_) {}
 
       // Phase 2: FD02 time sync & session control
       const now = new Date();
@@ -994,7 +1032,7 @@ export class ZrunE05Session {
         await writeCharacteristic(this.controlChar, hexToBytes("9E200816010001"));
         await sleep(20);
         await writeCharacteristic(this.controlChar, hexToBytes("9EB50B29010080"));
-        await sleep(180);
+        await sleep(150);
       } catch (_) {}
 
       // Phase 3 & 4: best-effort 0x03 & 0x07 queries
@@ -1003,7 +1041,7 @@ export class ZrunE05Session {
         await writeCharacteristic(this.controlChar, hexToBytes("9ED30BC6010001"));
         await sleep(20);
         await writeCharacteristic(this.controlChar, hexToBytes("9E3008200200FF07"));
-        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x03, 2500, "ack 0x03");
+        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x03, 1200, "ack 0x03");
       } catch (_) {}
 
       try {
@@ -1011,20 +1049,20 @@ export class ZrunE05Session {
         await writeCharacteristic(this.controlChar, hexToBytes("9E2B08FF02002200"));
         await sleep(30);
         await writeCharacteristic(this.controlChar, hexToBytes("9E2D08FF02002400"));
-        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x07, 2500, "ack 0x07");
+        await this._waitFrame(uploadQueue, (f) => f.cmd === 0x07, 1200, "ack 0x07");
       } catch (_) {}
 
       // Phase 5: FD02 bootstrap
       try {
         await writeCharacteristic(this.controlChar, hexToBytes("9EB50B29010080"));
-        await sleep(300);
+        await sleep(250);
         await writeCharacteristic(this.controlChar, hexToBytes("9ED30BC6010001"));
         try {
-          await this._waitRaw(uploadQueue, (r) => r.length >= 5 && r[0] === 0x9e && (r[3] === 0xc7 || r[2] === 0xc7), 2500, "FD01 C7");
+          await this._waitRaw(uploadQueue, (r) => r.length >= 5 && r[0] === 0x9e && (r[3] === 0xc7 || r[2] === 0xc7), 1500, "FD01 C7");
         } catch (_) {}
         await writeCharacteristic(this.controlChar, hexToBytes("9EF40BDC01000C"));
         try {
-          await this._waitRaw(uploadQueue, (r) => r.length >= 4 && r[0] === 0x9e && r[1] === 0xe6, 2500, "FD03 ready");
+          await this._waitRaw(uploadQueue, (r) => r.length >= 4 && r[0] === 0x9e && r[1] === 0xe6, 1200, "FD03 ready");
         } catch (_) {}
       } catch (_) {}
 
@@ -1036,12 +1074,13 @@ export class ZrunE05Session {
       await sendFe(0xc0, 0x27, Uint8Array.of(seqCounter++, 0x00, 0x00, 0x00, 0x00, 0x02, 0x01));
       await this._waitFrame(uploadQueue, (f) => f.cmd === 0x27, 8000, "ack 0x27");
 
-      // Phase 8: cmd 0x1B (file metadata + whole-file CRC-16/XMODEM)
+      // Phase 8: cmd 0x1B (file metadata + whole-file CRC-16/XMODEM + 8-hex ASCII .tmp filename)
       const fileSize = payloadBytes.length;
-      const tempName = `${Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0")}.${ext}`;
+      const randHex8 = Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+      const tempName = `${randHex8}.tmp`;
       const nameBytes = new TextEncoder().encode(tempName);
       const fileCrc = crc16xmodem(payloadBytes);
-      const metaBody = new Uint8Array(10 + nameBytes.length);
+      const metaBody = new Uint8Array(8 + nameBytes.length);
       metaBody[0] = seqCounter++;
       metaBody[1] = (fileSize >>> 24) & 0xff;
       metaBody[2] = (fileSize >>> 16) & 0xff;
@@ -1049,13 +1088,13 @@ export class ZrunE05Session {
       metaBody[4] = fileSize & 0xff;
       metaBody[5] = (fileCrc >> 8) & 0xff;
       metaBody[6] = fileCrc & 0xff;
-      metaBody[7] = (Math.random() * 256) | 0;
-      metaBody[8] = (Math.random() * 256) | 0;
-      metaBody.set(nameBytes, 9);
+      metaBody.set(nameBytes, 7);
       metaBody[metaBody.length - 1] = 0x00;
 
       await sendFe(0xc0, 0x1b, metaBody);
       const metaAck = await this._waitFrame(uploadQueue, (f) => f.cmd === 0x1b, 8000, "ack 0x1b");
+      const metaStatus = metaAck.body[0] ?? 0xff;
+      const metaAckHex = toHex(metaAck.body);
       let chunkSize = ZRUN_E05_SERVICES.DEFAULT_CHUNK_SIZE;
       if (metaAck.body.length >= 4) {
         const hint = (metaAck.body[2] << 8) | metaAck.body[3];
@@ -1064,7 +1103,14 @@ export class ZrunE05Session {
       this.log(t("logZrunUploadChunkHint", {
         chunkSize,
         crc: fileCrc.toString(16).toUpperCase().padStart(4, "0"),
+        ackHex: metaAckHex,
       }));
+      if (metaStatus !== 0x00) {
+        throw new Error(t("errZrunMetaStatus", {
+          status: metaStatus.toString(16).padStart(2, "0"),
+          hex: metaAckHex,
+        }));
+      }
 
       // Phase 9: windowed flow-controlled transfer
       let seq = seqCounter & 0xff;
@@ -1130,13 +1176,29 @@ export class ZrunE05Session {
       try {
         currentAck = await this._waitFrame(
           uploadQueue,
-          (f) => f.flag === 0x80 && f.cmd === 0x1d,
-          15000,
+          (f) => (f.cmd === 0x1d && f.body.length >= 8) || f.cmd === 0x1c || (f.cmd === 0x20 && f.flag === 0xc0),
+          25000,
           "initial E05 window ack"
         );
       } catch (_) {
+        this.log(t("logZrunDebugTrace", { trace: recentRxTrace.join(" | ") || "none" }));
         await abortSession();
         throw new Error(t("errZrunNoWindowAck", { sent: 0, total: payloadBytes.length }));
+      }
+
+      if (currentAck.cmd === 0x1c) {
+        await handleClose(currentAck);
+        return { success: true, status: 0 };
+      }
+      if (currentAck.cmd === 0x20 && currentAck.flag === 0xc0) {
+        if (!fileCompleteHandled) {
+          fileCompleteHandled = true;
+          const deviceSeq20 = currentAck.body[0] ?? seq;
+          await sendFe(0x00, 0x20, this._buildFilePathResponse(deviceSeq20, ext));
+        }
+        const closeFrame = await this._waitFrame(uploadQueue, (f) => f.cmd === 0x1c, 15000, "E05 session close");
+        await handleClose(closeFrame);
+        return { success: true, status: 0 };
       }
 
       while (true) {
@@ -1173,11 +1235,12 @@ export class ZrunE05Session {
         try {
           nextFrame = await this._waitFrame(
             uploadQueue,
-            (f) => (f.flag === 0x80 && f.cmd === 0x1d) || f.cmd === 0x20 || f.cmd === 0x1c,
+            (f) => (f.cmd === 0x1d && f.body.length >= 8) || f.cmd === 0x20 || f.cmd === 0x1c,
             18000,
             "E05 window ack / file complete / close"
           );
         } catch (_) {
+          this.log(t("logZrunDebugTrace", { trace: recentRxTrace.join(" | ") || "none" }));
           await abortSession();
           throw new Error(t("errZrunNoWindowAck", {
             sent: Math.min(payloadBytes.length, maxOffsetDelivered || totalBytesSent),
