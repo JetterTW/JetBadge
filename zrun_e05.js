@@ -5,7 +5,7 @@
  * - Image/Auth Service: 0000AE00-0000-1000-8000-00805F9B34FB (Write AE01, Notify AE02)
  * - Control Service:    C2E6FD00-E966-1000-8000-BEF9C223DF6A (Write FD02, Notify FD01/FD03/FD05)
  */
-import { t } from "./i18n.js?v=50";
+import { t } from "./i18n.js?v=51";
 
 export const ZRUN_E05_SERVICES = {
   AE_SERVICE_UUID: "0000ae00-0000-1000-8000-00805f9b34fb",
@@ -873,7 +873,11 @@ export class ZrunE05Session {
   async getRemainingSpace() {
     if (!this.isAttached) throw new Error(t("errNotConnected"));
     await this.ensureAuth();
-    const screen = await this.getScreenInfo();
+    let screen = await this.getScreenInfo();
+    if (!screen) {
+      await sleep(300);
+      screen = await this.getScreenInfo();
+    }
     if (screen && screen.freeKb > 0) {
       return screen.freeKb;
     }
@@ -1176,7 +1180,7 @@ export class ZrunE05Session {
         }
         if (onProgress) onProgress(payloadBytes.length, payloadBytes.length, 100);
         this.log(t("logZrunUploadComplete"));
-        await sleep(350);
+        await sleep(600);
       };
 
       let currentAck;
@@ -1278,8 +1282,10 @@ export class ZrunE05Session {
       throw err;
     } finally {
       fileCompleteAutoRespond = false;
-      this.isAuthenticated = false;
       this.notificationQueue = [];
+      if (!this.server || !this.server.connected) {
+        this.isAuthenticated = false;
+      }
       for (const c of this.notifyChars) {
         c.removeEventListener("characteristicvaluechanged", onMirror);
         c.removeEventListener("characteristicvaluechanged", onFileCompleteFast);
