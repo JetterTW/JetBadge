@@ -172,6 +172,36 @@
       cursor: not-allowed;
     }
 
+    .btn-bmac {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #FFDD00;
+      color: #000000;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    }
+    .btn-bmac:hover {
+      background: #FFE433;
+      color: #000000;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 10px rgba(255, 221, 0, 0.4);
+    }
+    .btn-bmac:active {
+      transform: translateY(0);
+    }
+    .btn-bmac .bmac-icon {
+      font-size: 14px;
+      line-height: 1;
+    }
+
     .lang-switch {
       display: inline-flex;
       background: #0f172a;
@@ -663,6 +693,10 @@
         </p>
       </div>
       <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <a href="https://buymeacoffee.com/jetter" target="_blank" rel="noopener noreferrer" class="btn-bmac" id="btnBmac" data-i18n-title="btnBmacTitle" title="請我喝杯咖啡 (Buy me a coffee)">
+          <span class="bmac-icon">☕</span>
+          <span data-i18n="btnBmacText">請我喝杯咖啡</span>
+        </a>
         <div class="lang-switch" role="group" aria-label="Language switch">
           <button id="btnLangZh" type="button" class="lang-btn active" aria-pressed="true">中文</button>
           <button id="btnLangEn" type="button" class="lang-btn" aria-pressed="false">EN</button>
@@ -1040,6 +1074,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=42"></script>
+  <script type="module" src="./app.js?v=43"></script>
 </body>
 </html>
