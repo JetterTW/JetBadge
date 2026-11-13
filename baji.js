@@ -4,8 +4,8 @@
  * - BG02 / oem_DG01 (SuperBand NUS 7E400001-B5A3-F393-E0A9-E50E24DCCA9D)
  * - E05 / E87 (ZRun / JieLi RCSP AE00 + C2E6FD00-E966-1000-8000-BEF9C223DF6A)
  */
-import { t } from "./i18n.js?v=48";
-import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=48";
+import { t } from "./i18n.js?v=49";
+import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=49";
 
 export const BleProfiles = [
   {
@@ -59,6 +59,7 @@ export class SuperBandClient {
   constructor(logger = console.log) {
     this.logger = logger;
     this.device = null;
+    this._lastConnectedDevice = null;
     this.server = null;
     this.writeChar = null;
     this.notifyChar = null;
@@ -130,7 +131,7 @@ export class SuperBandClient {
 
   async ensureConnected() {
     if (this.isConnected) return true;
-    let target = this.device;
+    let target = this.device || this._lastConnectedDevice;
     if (!target) {
       const permitted = await this.getPermittedDevices();
       if (permitted && permitted.length > 0) {
@@ -205,6 +206,7 @@ export class SuperBandClient {
     }
     this.stopKeepAlive();
     this.device = device;
+    this._lastConnectedDevice = device;
     this.log(t("logSelectedDevice", { name: this.device.name || t("unnamedDevice"), id: this.device.id }));
 
     if (this._boundDisconnectHandler && this._lastBoundDevice) {

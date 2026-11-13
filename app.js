@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=48";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=48";
+import { SuperBandClient } from "./baji.js?v=49";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=49";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -324,7 +324,7 @@ async function performDeviceConnection(target) {
 // 傳輸前檢查連線狀態，若徽章待機或暫時斷線則自動無縫重新連線
 async function ensureConnectionActive(statusMessage = t("progressAutoReconnecting")) {
   if (client.isConnected) return true;
-  let target = client.device;
+  let target = client.device || client._lastConnectedDevice;
   const last = getLastSavedDeviceInfo();
   if (!target && typeof client.getPermittedDevices === "function") {
     try {
@@ -362,18 +362,63 @@ async function ensureConnectionActive(statusMessage = t("progressAutoReconnectin
 if ($btnQuickReconnect) {
   $btnQuickReconnect.addEventListener("click", async () => {
     const last = getLastSavedDeviceInfo();
-    if (!last || !last.id) return;
-    try {
-      const permitted = await client.getPermittedDevices();
-      const target = permitted.find(d => d.id === last.id) || permitted.find(d => d.name === last.name) || permitted[0];
-      if (!target) {
-        log(t("errNoPermittedDeviceFound"));
+    let target = null;
+
+    // 1. 優先檢查記憶體中現有之裝置實例 (同一瀏覽器工作階段)
+    if (client.device && (!last || !last.id || client.device.id === last.id || client.device.name === last.name)) {
+      target = client.device;
+    } else if (client._lastConnectedDevice) {
+      target = client._lastConnectedDevice;
+    }
+
+    // 2. 若記憶體中無物件，嘗試查詢瀏覽器授權裝置列表
+    if (!target && typeof client.getPermittedDevices === "function") {
+      try {
+        const permitted = await client.getPermittedDevices();
+        if (permitted && permitted.length > 0) {
+          if (last && last.id) {
+            target = permitted.find(d => d.id === last.id) || permitted.find(d => d.name === last.name) || permitted[0];
+          } else {
+            target = permitted[0];
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 3. 若已取得目標裝置實例，直接靜默執行 GATT 連線
+    if (target) {
+      try {
+        log(t("logQuickConnecting", { name: target.name || last?.name || t("unnamedDevice") }));
+        await performDeviceConnection(target);
         return;
+      } catch (err) {
+        log(t("logConnectFailed", { msg: err.message }));
+        // 靜默連線失敗時繼續往下，自動彈出配對視窗供使用者重新點選
       }
-      log(t("logQuickConnecting", { name: target.name || last.name }));
-      await performDeviceConnection(target);
+    }
+
+    // 4. 若瀏覽器未持有可用裝置實例（例如重新整理頁面且瀏覽器未開啟持久權限旗標）：
+    //    既然使用者已主動點擊「⚡ 重新連線」，具備 User Gesture，直接開啟藍牙搜尋視窗！
+    try {
+      const acceptAll = !!($chkAllDevices && $chkAllDevices.checked);
+      log(t("logQuickConnectScanPrompt", { name: last?.name || t("unnamedDevice") }));
+      const res = await client.connect(acceptAll);
+      saveLastConnectedDevice(client.device, res);
+      updateUIConnectionState(true, res);
+      if ($infoProfile) {
+        $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
+      }
+      if ($selFormat) {
+        $selFormat.value = res.protocolKind === "zrun_e05" ? "jpeg" : "avi";
+      }
+      await refreshDeviceInfo();
+      log(t("logConnectedSuccess", { name: client.device.name || res.deviceName }));
     } catch (err) {
-      log(t("logConnectFailed", { msg: err.message }));
+      if (err.name === "NotFoundError") {
+        log(t("logScanCancelled"));
+      } else {
+        log(t("logConnectFailed", { msg: err.message }));
+      }
       updateUIConnectionState(false);
     }
   });

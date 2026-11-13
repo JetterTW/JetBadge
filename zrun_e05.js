@@ -5,7 +5,7 @@
  * - Image/Auth Service: 0000AE00-0000-1000-8000-00805F9B34FB (Write AE01, Notify AE02)
  * - Control Service:    C2E6FD00-E966-1000-8000-BEF9C223DF6A (Write FD02, Notify FD01/FD03/FD05)
  */
-import { t } from "./i18n.js?v=48";
+import { t } from "./i18n.js?v=49";
 
 export const ZRUN_E05_SERVICES = {
   AE_SERVICE_UUID: "0000ae00-0000-1000-8000-00805f9b34fb",
