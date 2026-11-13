@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=49";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=49";
+import { SuperBandClient } from "./baji.js?v=50";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=50";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -584,6 +584,15 @@ function parseResolutionValue(val) {
   };
 }
 
+// 計算預覽工作區 (Stage) 尺寸：上下拉開邊距、左右展開視野，讓超出顯示範圍的圖像清晰可見
+function getPreviewStageDimensions(targetW, targetH) {
+  const isZrun = targetW >= 360 || targetH >= 360;
+  // 給予寬廣的舞台空間：左右展開、上下拉開留白
+  const stageW = isZrun ? 640 : 560;
+  const stageH = isZrun ? 480 : 420;
+  return { stageW, stageH };
+}
+
 function computeInitialCropState(img, targetW, targetH) {
   const baseScale = Math.max(targetW / img.naturalWidth, targetH / img.naturalHeight);
   const scale = baseScale;
@@ -597,22 +606,26 @@ function computeInitialCropState(img, targetW, targetH) {
   };
 }
 
-function applyZoomFactorToCrop(crop, zoomFactor, canvasW, canvasH) {
+function applyZoomFactorToCrop(crop, zoomFactor, targetW, targetH) {
   const oldScale = crop.scale || 1;
   const clamped = Math.max(0.4, Math.min(4.0, Number(zoomFactor) || 1.0));
   const roundedZoom = Math.round(clamped * 100) / 100; // 固定以 1% (0.01) 為步進單位
   crop.userZoom = roundedZoom;
   crop.scale = crop.baseScale * crop.userZoom;
 
-  // 以畫布中心為基準進行等比縮放
-  const cx = canvasW / 2;
-  const cy = canvasH / 2;
+  // 以徽章顯示範圍中心 (targetW / 2, targetH / 2) 為基準進行等比縮放
+  const cx = targetW / 2;
+  const cy = targetH / 2;
   crop.x = cx - (cx - crop.x) * (crop.scale / oldScale);
   crop.y = cy - (cy - crop.y) * (crop.scale / oldScale);
   return roundedZoom;
 }
 
-function renderImageWithCrop(ctx, width, height, img, crop, shape, { previewOverlay = false } = {}) {
+function renderImageWithCrop(ctx, width, height, img, crop, shape, {
+  previewOverlay = false,
+  targetW = width,
+  targetH = height,
+} = {}) {
   if (previewOverlay) {
     ctx.clearRect(0, 0, width, height);
   } else {
@@ -621,15 +634,25 @@ function renderImageWithCrop(ctx, width, height, img, crop, shape, { previewOver
     ctx.fillRect(0, 0, width, height);
   }
 
+  // 徽章目標中心點 (在預覽畫布中央或匯出畫布中央)
+  const badgeCenterX = width / 2;
+  const badgeCenterY = height / 2;
+
   if (img && crop) {
     ctx.save();
+    // 匯出時若為圓形，以徽章尺寸進行裁切
     if (!previewOverlay && shape === "circle") {
       ctx.beginPath();
-      ctx.arc(width / 2, height / 2, Math.min(width, height) / 2, 0, Math.PI * 2);
+      ctx.arc(badgeCenterX, badgeCenterY, Math.min(targetW, targetH) / 2, 0, Math.PI * 2);
       ctx.clip();
     }
-    const cx = crop.x + (img.naturalWidth * crop.scale) / 2;
-    const cy = crop.y + (img.naturalHeight * crop.scale) / 2;
+
+    // 計算圖片中心點：以徽章中心為基準疊加偏移
+    const offsetX = crop.x + (img.naturalWidth * crop.scale) / 2 - targetW / 2;
+    const offsetY = crop.y + (img.naturalHeight * crop.scale) / 2 - targetH / 2;
+    const cx = badgeCenterX + offsetX;
+    const cy = badgeCenterY + offsetY;
+
     ctx.translate(cx, cy);
     ctx.rotate((crop.rotation * Math.PI) / 180);
     ctx.drawImage(
@@ -645,20 +668,45 @@ function renderImageWithCrop(ctx, width, height, img, crop, shape, { previewOver
     ctx.fillRect(0, 0, width, height);
   }
 
-  if (previewOverlay && shape === "circle") {
+  // 預覽遮罩與邊框指示線
+  if (previewOverlay) {
     ctx.save();
-    ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+    const radius = Math.min(targetW, targetH) / 2;
+    const badgeX = badgeCenterX - targetW / 2;
+    const badgeY = badgeCenterY - targetH / 2;
+
+    // 1. 半透明遮罩 (外部圖片變暗但清晰可見構圖與超出部分)
+    ctx.fillStyle = "rgba(7, 11, 20, 0.62)";
     ctx.beginPath();
-    ctx.rect(0, 0, width, height);
-    const radius = Math.min(width, height) / 2;
-    ctx.arc(width / 2, height / 2, radius, 0, Math.PI * 2, true);
+    ctx.rect(0, 0, width, height); // 全畫布
+
+    if (shape === "circle") {
+      ctx.arc(badgeCenterX, badgeCenterY, radius, 0, Math.PI * 2, true); // 逆時針圓形挖空
+    } else {
+      // 矩形挖空 (使用逆時針路徑)
+      ctx.rect(badgeX + targetW, badgeY, -targetW, targetH);
+    }
     ctx.fill("evenodd");
 
-    ctx.strokeStyle = "rgba(6, 182, 212, 0.6)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(width / 2, height / 2, radius - 1, 0, Math.PI * 2);
-    ctx.stroke();
+    // 2. 顯示範圍的高亮邊框 (青色螢光實線)
+    if (shape === "circle") {
+      ctx.strokeStyle = "rgba(6, 182, 212, 0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(badgeCenterX, badgeCenterY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 外圍微弱輔助方框 (提示徽章實體螢幕外接邊界)
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.12)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(badgeX, badgeY, targetW, targetH);
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = "rgba(6, 182, 212, 0.85)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(badgeX, badgeY, targetW, targetH);
+    }
     ctx.restore();
   }
 }
@@ -668,7 +716,11 @@ function exportCropToCanvas(img, crop, shape, targetW, targetH) {
   outCanvas.width = targetW;
   outCanvas.height = targetH;
   const ctx = outCanvas.getContext("2d");
-  renderImageWithCrop(ctx, targetW, targetH, img, crop, shape, { previewOverlay: false });
+  renderImageWithCrop(ctx, targetW, targetH, img, crop, shape, {
+    previewOverlay: false,
+    targetW,
+    targetH,
+  });
   return outCanvas;
 }
 
@@ -698,14 +750,20 @@ let cropState = {
   isDragging: false,
   dragStartX: 0,
   dragStartY: 0,
+  dragScale: 1,
+  startMouseX: 0,
+  startMouseY: 0,
+  origCropX: 0,
+  origCropY: 0,
 };
 
 function updateCropTargetResolution() {
   const { targetW, targetH } = parseResolutionValue($selResolution.value);
   cropState.targetW = targetW;
   cropState.targetH = targetH;
-  $cropCanvas.width = cropState.targetW;
-  $cropCanvas.height = cropState.targetH;
+  const { stageW, stageH } = getPreviewStageDimensions(targetW, targetH);
+  $cropCanvas.width = stageW;
+  $cropCanvas.height = stageH;
   $previewDimensions.textContent = `${cropState.targetW} x ${cropState.targetH} px`;
 
   if (currentImg) {
@@ -749,6 +807,8 @@ function initImageToCrop(img) {
 function renderCrop() {
   renderImageWithCrop(cropCtx, $cropCanvas.width, $cropCanvas.height, currentImg, cropState, $selCropShape.value, {
     previewOverlay: true,
+    targetW: cropState.targetW,
+    targetH: cropState.targetH,
   });
 }
 
@@ -866,17 +926,23 @@ $dropArea.addEventListener("click", () => {
   }
 });
 
-// 畫布滑鼠拖曳移動圖片 (Pan)
+// 畫布滑鼠拖曳移動圖片 (Pan) - 支援畫布 CSS 縮放下的 1:1 像素移動
 $dropArea.addEventListener("mousedown", (e) => {
   if (!currentImg) return;
   cropState.isDragging = true;
-  cropState.dragStartX = e.clientX - cropState.x;
-  cropState.dragStartY = e.clientY - cropState.y;
+  const rect = $cropCanvas.getBoundingClientRect();
+  cropState.dragScale = rect.width > 0 ? ($cropCanvas.width / rect.width) : 1;
+  cropState.startMouseX = e.clientX;
+  cropState.startMouseY = e.clientY;
+  cropState.origCropX = cropState.x;
+  cropState.origCropY = cropState.y;
 });
 window.addEventListener("mousemove", (e) => {
   if (!cropState.isDragging || !currentImg) return;
-  cropState.x = e.clientX - cropState.dragStartX;
-  cropState.y = e.clientY - cropState.dragStartY;
+  const dx = (e.clientX - cropState.startMouseX) * (cropState.dragScale || 1);
+  const dy = (e.clientY - cropState.startMouseY) * (cropState.dragScale || 1);
+  cropState.x = cropState.origCropX + dx;
+  cropState.y = cropState.origCropY + dy;
   renderCrop();
 });
 window.addEventListener("mouseup", () => {
@@ -911,7 +977,7 @@ if ($btnZoomIn) {
 
 function setZoom(zoomFactor) {
   if (!currentImg) return;
-  const roundedZoom = applyZoomFactorToCrop(cropState, zoomFactor, $cropCanvas.width, $cropCanvas.height);
+  const roundedZoom = applyZoomFactorToCrop(cropState, zoomFactor, cropState.targetW, cropState.targetH);
   $zoomRange.value = String(roundedZoom);
   $zoomVal.textContent = `${Math.round(roundedZoom * 100)}%`;
   renderCrop();
@@ -1639,6 +1705,11 @@ let slideshowTargetH = 240;
 let slideDragging = false;
 let slideDragStartX = 0;
 let slideDragStartY = 0;
+let slideDragScale = 1;
+let slideStartMouseX = 0;
+let slideStartMouseY = 0;
+let slideOrigCropX = 0;
+let slideOrigCropY = 0;
 let slidePreviewTimer = null;
 let slidePreviewIdx = 0;
 let slideThumbTimer = null;
@@ -1741,7 +1812,11 @@ function renderSlideshowCanvas(previewIdx = null) {
     slide ? slide.img : null,
     slide ? slide.crop : null,
     shape,
-    { previewOverlay: true }
+    {
+      previewOverlay: true,
+      targetW: slideshowTargetW,
+      targetH: slideshowTargetH,
+    }
   );
 }
 
@@ -2045,8 +2120,9 @@ function updateSlideshowTargetResolution() {
   const { targetW, targetH } = parseResolutionValue($selSlideshowRes.value);
   slideshowTargetW = Math.min(targetW, maxDim);
   slideshowTargetH = Math.min(targetH, maxDim);
-  $slideshowCanvas.width = slideshowTargetW;
-  $slideshowCanvas.height = slideshowTargetH;
+  const { stageW, stageH } = getPreviewStageDimensions(slideshowTargetW, slideshowTargetH);
+  $slideshowCanvas.width = stageW;
+  $slideshowCanvas.height = stageH;
 
   for (const slide of slides) {
     const oldScale = slide.crop.scale || 1;
@@ -2177,7 +2253,7 @@ function setActiveSlideZoom(zoomFactor) {
   const cur = getActiveSlide();
   if (!cur || !$slideshowCanvas) return;
   if (slidePreviewTimer) stopSlideshowPreview();
-  const roundedZoom = applyZoomFactorToCrop(cur.crop, zoomFactor, $slideshowCanvas.width, $slideshowCanvas.height);
+  const roundedZoom = applyZoomFactorToCrop(cur.crop, zoomFactor, slideshowTargetW, slideshowTargetH);
   if ($slideshowZoomRange) $slideshowZoomRange.value = String(roundedZoom);
   if ($slideshowZoomVal) $slideshowZoomVal.textContent = `${Math.round(roundedZoom * 100)}%`;
   renderSlideshowCanvas();
@@ -2313,8 +2389,12 @@ if ($slideshowDropArea) {
     if (!cur) return;
     if (slidePreviewTimer) stopSlideshowPreview();
     slideDragging = true;
-    slideDragStartX = e.clientX - cur.crop.x;
-    slideDragStartY = e.clientY - cur.crop.y;
+    const rect = $slideshowCanvas.getBoundingClientRect();
+    slideDragScale = rect.width > 0 ? ($slideshowCanvas.width / rect.width) : 1;
+    slideStartMouseX = e.clientX;
+    slideStartMouseY = e.clientY;
+    slideOrigCropX = cur.crop.x;
+    slideOrigCropY = cur.crop.y;
   });
 
   $slideshowDropArea.addEventListener("wheel", (e) => {
@@ -2333,8 +2413,10 @@ window.addEventListener("mousemove", (e) => {
     slideDragging = false;
     return;
   }
-  cur.crop.x = e.clientX - slideDragStartX;
-  cur.crop.y = e.clientY - slideDragStartY;
+  const dx = (e.clientX - slideStartMouseX) * (slideDragScale || 1);
+  const dy = (e.clientY - slideStartMouseY) * (slideDragScale || 1);
+  cur.crop.x = slideOrigCropX + dx;
+  cur.crop.y = slideOrigCropY + dy;
   renderSlideshowCanvas();
 });
 

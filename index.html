@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>電子徽章 (JetBadge) 管理控制台</title>
-  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=49" />
-  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v=49" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=49" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=50" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v=50" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=50" />
   <style>
     :root {
       --primary: #4f46e5;
@@ -434,7 +434,7 @@
       background: #090d16;
       border: 2px dashed var(--card-border);
       border-radius: 8px;
-      min-height: 280px;
+      min-height: 420px;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -449,9 +449,10 @@
     }
     #cropCanvas {
       max-width: 100%;
-      max-height: 380px;
+      max-height: 460px;
       background: transparent;
       display: block;
+      object-fit: contain;
     }
 
     .cropper-tools {
@@ -642,9 +643,10 @@
     }
     #slideshowCanvas {
       max-width: 100%;
-      max-height: 380px;
+      max-height: 460px;
       background: transparent;
       display: block;
+      object-fit: contain;
     }
 
     .filmstrip-wrap {
@@ -888,7 +890,7 @@
           <!-- 裁切畫布 -->
           <div>
             <div class="cropper-box" id="dropArea">
-              <canvas id="cropCanvas" width="240" height="240"></canvas>
+              <canvas id="cropCanvas" width="560" height="420"></canvas>
               <div class="dropzone-tip" id="dropTip">
                 <span data-i18n="dropTipLine1">點擊下方按鈕或拖曳圖片 (JPG/PNG) 至此處</span><br>
                 <span data-i18n="dropTipLine2">支援滑鼠滾輪縮放、按住拖曳調整構圖</span>
@@ -1032,7 +1034,7 @@
             </div>
 
             <div class="cropper-box" id="slideshowDropArea">
-              <canvas id="slideshowCanvas" width="240" height="240"></canvas>
+              <canvas id="slideshowCanvas" width="560" height="420"></canvas>
               <div class="dropzone-tip" id="slideshowDropTip">
                 <span data-i18n="slideshowDropTip1">點擊「加入多張圖片」或拖曳多張圖片 (JPG/PNG) 至此處</span><br>
                 <span data-i18n="slideshowDropTip2">可點選下方縮圖逐一拖曳位置、滑輪/滑桿縮放 (1% 單位)</span>
@@ -1180,6 +1182,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=49"></script>
+  <script type="module" src="./app.js?v=50"></script>
 </body>
 </html>
