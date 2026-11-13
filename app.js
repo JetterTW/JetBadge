@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=45";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=45";
+import { SuperBandClient } from "./baji.js?v=46";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=46";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -11,6 +11,7 @@ const $btnDisconnect = $("btnDisconnect");
 const $btnRefreshInfo = $("btnRefreshInfo");
 const $btnFindMe = $("btnFindMe");
 const $chkAllDevices = $("chkAllDevices");
+const $detailsScanFilter = $("detailsScanFilter");
 const $btnLangZh = $("btnLangZh");
 const $btnLangEn = $("btnLangEn");
 
@@ -217,9 +218,28 @@ function updateUIConnectionState(connected, info = null) {
   }
 }
 
-$btnConnect.addEventListener("click", async () => {
+// 搜尋過濾偏好持久化（預設未勾選，僅搜尋支援設備）
+if ($chkAllDevices) {
   try {
-    const acceptAll = $chkAllDevices.checked;
+    const savedScanAll = localStorage.getItem("jetbadge_scan_all");
+    if (savedScanAll === "1") {
+      $chkAllDevices.checked = true;
+      if ($detailsScanFilter) $detailsScanFilter.open = true;
+    } else {
+      $chkAllDevices.checked = false;
+    }
+  } catch (e) {}
+
+  $chkAllDevices.addEventListener("change", () => {
+    try {
+      localStorage.setItem("jetbadge_scan_all", $chkAllDevices.checked ? "1" : "0");
+    } catch (e) {}
+  });
+}
+
+$btnConnect.addEventListener("click", async () => {
+  const acceptAll = !!($chkAllDevices && $chkAllDevices.checked);
+  try {
     const res = await client.connect(acceptAll);
     updateUIConnectionState(true, res);
     $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
@@ -231,6 +251,9 @@ $btnConnect.addEventListener("click", async () => {
     await refreshDeviceInfo();
   } catch (err) {
     log(t("logConnectFailed", { msg: err.message }));
+    if (!acceptAll && (err.name === "NotFoundError" || /cancelled|user cancelled/i.test(err.message))) {
+      log(t("logConnectFilterHint"));
+    }
     updateUIConnectionState(false);
   }
 });

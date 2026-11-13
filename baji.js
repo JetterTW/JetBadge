@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 + ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v40)
+ * SuperBand & BG02 / DG01 + ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v46)
  * Verified against:
  * - BG02 / oem_DG01 (SuperBand NUS 7E400001-B5A3-F393-E0A9-E50E24DCCA9D)
  * - E05 / E87 (ZRun / JieLi RCSP AE00 + C2E6FD00-E966-1000-8000-BEF9C223DF6A)
  */
-import { t } from "./i18n.js?v=45";
-import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=45";
+import { t } from "./i18n.js?v=46";
+import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=46";
 
 export const BleProfiles = [
   {
@@ -84,7 +84,7 @@ export class SuperBandClient {
     return !!(this.server && this.server.connected && this.writeChar);
   }
 
-  async connect(acceptAllDevices = true, namePrefix = null) {
+  async connect(acceptAllDevices = false, namePrefix = null) {
     if (!navigator.bluetooth) {
       throw new Error(t("errWebBleUnsupported"));
     }
@@ -110,9 +110,21 @@ export class SuperBandClient {
         ...superbandServices.map(s => ({ services: [s] })),
         { services: [ZRUN_E05_SERVICES.AE_SERVICE_UUID] },
         { services: [ZRUN_E05_SERVICES.FD_SERVICE_UUID] },
+        { namePrefix: "BG02" },
+        { namePrefix: "BG" },
+        { namePrefix: "DG01" },
+        { namePrefix: "DG" },
+        { namePrefix: "oem_" },
+        { namePrefix: "SuperBand" },
+        { namePrefix: "SUPERBAND" },
+        { namePrefix: "Badge" },
+        { namePrefix: "badge" },
         { namePrefix: "E05" },
         { namePrefix: "E87" },
         { namePrefix: "L8" },
+        { namePrefix: "ZRun" },
+        { namePrefix: "ZRUN" },
+        { namePrefix: "JetBadge" },
       ];
     }
 

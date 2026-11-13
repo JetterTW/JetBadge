@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>電子徽章 (JetBadge) 管理控制台</title>
-  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=45" />
-  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v=45" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=45" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=46" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v=46" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=46" />
   <style>
     :root {
       --primary: #4f46e5;
@@ -269,6 +269,39 @@
       font-size: 13px;
       color: var(--text-muted);
       cursor: pointer;
+    }
+
+    /* Scan Filter Collapsible Details */
+    .scan-filter-details {
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px dashed var(--card-border);
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      transition: all 0.2s ease;
+    }
+    .scan-filter-details[open] {
+      background: #0f172a;
+      border-color: rgba(99, 102, 241, 0.4);
+      padding-bottom: 8px;
+    }
+    .scan-filter-summary {
+      cursor: pointer;
+      color: var(--text-muted);
+      font-weight: 500;
+      user-select: none;
+      outline: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .scan-filter-summary:hover {
+      color: var(--text);
+    }
+    .scan-filter-body {
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
     }
 
     /* Device Info Grid */
@@ -724,10 +757,17 @@
       </div>
 
       <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
-        <label class="checkbox-label">
-          <input type="checkbox" id="chkAllDevices" checked />
-          <span data-i18n="chkAllDevicesLabel">搜尋附近全部藍牙設備（若徽章未廣播 Service UUID 請勾選）</span>
-        </label>
+        <details class="scan-filter-details" id="detailsScanFilter">
+          <summary class="scan-filter-summary">
+            <span data-i18n="summaryScanFilter">🔍 搜尋過濾：預設僅顯示支援徽章（找不到時點此展開）</span>
+          </summary>
+          <div class="scan-filter-body">
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkAllDevices" />
+              <span data-i18n="chkAllDevicesLabel">顯示附近全部藍牙設備（包含未識別設備，若自訂韌體未列出請勾選）</span>
+            </label>
+          </div>
+        </details>
       </div>
 
       <div class="info-list">
@@ -1077,6 +1117,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=45"></script>
+  <script type="module" src="./app.js?v=46"></script>
 </body>
 </html>
