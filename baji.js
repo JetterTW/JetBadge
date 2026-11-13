@@ -1,11 +1,11 @@
 /**
- * SuperBand & BG02 / DG01 + ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v46)
+ * SuperBand & BG02 / DG01 + ZRun / E05 / E87 Smart E-Badge BLE Protocol Client (v47)
  * Verified against:
  * - BG02 / oem_DG01 (SuperBand NUS 7E400001-B5A3-F393-E0A9-E50E24DCCA9D)
  * - E05 / E87 (ZRun / JieLi RCSP AE00 + C2E6FD00-E966-1000-8000-BEF9C223DF6A)
  */
-import { t } from "./i18n.js?v=46";
-import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=46";
+import { t } from "./i18n.js?v=47";
+import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=47";
 
 export const BleProfiles = [
   {
@@ -84,6 +84,17 @@ export class SuperBandClient {
     return !!(this.server && this.server.connected && this.writeChar);
   }
 
+  async getPermittedDevices() {
+    if (!navigator.bluetooth || typeof navigator.bluetooth.getDevices !== "function") {
+      return [];
+    }
+    try {
+      return await navigator.bluetooth.getDevices();
+    } catch (_) {
+      return [];
+    }
+  }
+
   async connect(acceptAllDevices = false, namePrefix = null) {
     if (!navigator.bluetooth) {
       throw new Error(t("errWebBleUnsupported"));
@@ -130,19 +141,32 @@ export class SuperBandClient {
 
     const modeStr = acceptAllDevices ? t("scanModeAll") : t("scanModeService");
     this.log(t("logScanningBle", { mode: modeStr }));
-    this.device = await navigator.bluetooth.requestDevice(options);
+    const device = await navigator.bluetooth.requestDevice(options);
+    return await this.connectDevice(device);
+  }
+
+  async connectDevice(device) {
+    if (!device) {
+      throw new Error(t("errDeviceNotFound"));
+    }
+    this.device = device;
     this.log(t("logSelectedDevice", { name: this.device.name || t("unnamedDevice"), id: this.device.id }));
 
-    if (!this._boundDisconnectHandler) {
-      this._boundDisconnectHandler = () => {
-        this.log(t("logBleLinkDropped"));
-        this.cleanup();
-        if (this.onDisconnected) {
-          try { this.onDisconnected(); } catch (e) {}
-        }
-      };
-      this.device.addEventListener("gattserverdisconnected", this._boundDisconnectHandler);
+    if (this._boundDisconnectHandler && this._lastBoundDevice) {
+      try {
+        this._lastBoundDevice.removeEventListener("gattserverdisconnected", this._boundDisconnectHandler);
+      } catch (_) {}
     }
+
+    this._boundDisconnectHandler = () => {
+      this.log(t("logBleLinkDropped"));
+      this.cleanup();
+      if (this.onDisconnected) {
+        try { this.onDisconnected(); } catch (e) {}
+      }
+    };
+    this._lastBoundDevice = this.device;
+    this.device.addEventListener("gattserverdisconnected", this._boundDisconnectHandler);
 
     let matched = false;
     let lastError = null;

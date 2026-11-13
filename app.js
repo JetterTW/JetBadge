@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=46";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=46";
+import { SuperBandClient } from "./baji.js?v=47";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=47";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -7,9 +7,14 @@ const $logBox = $("logBox");
 const $connStatus = $("connStatus");
 const $connStatusText = $("connStatusText");
 const $btnConnect = $("btnConnect");
+const $btnQuickReconnect = $("btnQuickReconnect");
 const $btnDisconnect = $("btnDisconnect");
 const $btnRefreshInfo = $("btnRefreshInfo");
 const $btnFindMe = $("btnFindMe");
+const $lastDeviceBox = $("lastDeviceBox");
+const $lastDeviceNameText = $("lastDeviceNameText");
+const $btnForgetDevice = $("btnForgetDevice");
+const $chkAutoReconnect = $("chkAutoReconnect");
 const $chkAllDevices = $("chkAllDevices");
 const $detailsScanFilter = $("detailsScanFilter");
 const $btnLangZh = $("btnLangZh");
@@ -189,6 +194,7 @@ function updateUIConnectionState(connected, info = null) {
     $btnUploadMedia.disabled = false;
     if ($btnUploadSlideshow) $btnUploadSlideshow.disabled = false;
     if ($btnRefreshSpace) $btnRefreshSpace.disabled = false;
+    if ($btnQuickReconnect) $btnQuickReconnect.style.display = "none";
   } else {
     lastConnState = { connected: false, deviceName: "", profileName: "", profileKey: null };
     lastDeviceInfo = null;
@@ -215,7 +221,117 @@ function updateUIConnectionState(connected, info = null) {
     $storageFill.style.width = "0%";
     if (typeof renderMediaDetails === "function") renderMediaDetails();
     if (typeof updateSlideshowEstimate === "function") updateSlideshowEstimate();
+    updateLastDeviceUI();
   }
+}
+
+// ==========================================
+// 上次連線裝置紀錄與快速重新連線
+// ==========================================
+function saveLastConnectedDevice(device, res = null) {
+  if (!device) return;
+  try {
+    const id = device.id || "";
+    const name = device.name || (res && res.deviceName) || "Badge";
+    if (id) {
+      localStorage.setItem("jetbadge_last_device_id", id);
+      localStorage.setItem("jetbadge_last_device_name", name);
+    }
+  } catch (e) {}
+  updateLastDeviceUI();
+}
+
+function getLastSavedDeviceInfo() {
+  try {
+    const id = localStorage.getItem("jetbadge_last_device_id");
+    const name = localStorage.getItem("jetbadge_last_device_name");
+    if (id) return { id, name: name || "Badge" };
+  } catch (e) {}
+  return null;
+}
+
+function updateLastDeviceUI() {
+  const last = getLastSavedDeviceInfo();
+  if (last && last.id) {
+    if ($lastDeviceBox) $lastDeviceBox.style.display = "flex";
+    if ($lastDeviceNameText) $lastDeviceNameText.textContent = last.name;
+    if ($btnQuickReconnect) {
+      if (!client.isConnected) {
+        $btnQuickReconnect.style.display = "inline-flex";
+        $btnQuickReconnect.textContent = `⚡ ${t("btnQuickReconnect")} (${last.name})`;
+      } else {
+        $btnQuickReconnect.style.display = "none";
+      }
+    }
+  } else {
+    if ($lastDeviceBox) $lastDeviceBox.style.display = "none";
+    if ($btnQuickReconnect) $btnQuickReconnect.style.display = "none";
+  }
+}
+
+// 自動重連勾選狀態持久化（預設勾選）
+if ($chkAutoReconnect) {
+  try {
+    const savedAuto = localStorage.getItem("jetbadge_auto_reconnect");
+    $chkAutoReconnect.checked = savedAuto !== "0";
+  } catch (e) {
+    $chkAutoReconnect.checked = true;
+  }
+
+  $chkAutoReconnect.addEventListener("change", () => {
+    try {
+      localStorage.setItem("jetbadge_auto_reconnect", $chkAutoReconnect.checked ? "1" : "0");
+    } catch (e) {}
+  });
+}
+
+// 清除上次連線裝置記憶
+if ($btnForgetDevice) {
+  $btnForgetDevice.addEventListener("click", async () => {
+    const last = getLastSavedDeviceInfo();
+    try {
+      if (last && last.id && typeof client.getPermittedDevices === "function") {
+        const permitted = await client.getPermittedDevices();
+        const target = permitted.find(d => d.id === last.id);
+        if (target && typeof target.forget === "function") {
+          await target.forget();
+        }
+      }
+      localStorage.removeItem("jetbadge_last_device_id");
+      localStorage.removeItem("jetbadge_last_device_name");
+    } catch (e) {}
+    updateLastDeviceUI();
+    log(t("logDeviceForgotten"));
+  });
+}
+
+// 快速重新連線按鈕
+if ($btnQuickReconnect) {
+  $btnQuickReconnect.addEventListener("click", async () => {
+    const last = getLastSavedDeviceInfo();
+    if (!last || !last.id) return;
+    try {
+      const permitted = await client.getPermittedDevices();
+      const target = permitted.find(d => d.id === last.id) || permitted.find(d => d.name === last.name) || permitted[0];
+      if (!target) {
+        log(t("errNoPermittedDeviceFound"));
+        return;
+      }
+      log(t("logQuickConnecting", { name: target.name || last.name }));
+      const res = await client.connectDevice(target);
+      saveLastConnectedDevice(target, res);
+      updateUIConnectionState(true, res);
+      $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
+      if ($selFormat) {
+        $selFormat.value = res.protocolKind === "zrun_e05" ? "jpeg" : "avi";
+      }
+      await refreshDeviceInfo();
+      log(t("logConnectedSuccess", { name: target.name || last.name }));
+    } catch (err) {
+      log(t("logConnectFailed", { msg: err.message }));
+      updateUIConnectionState(false);
+    }
+  });
 }
 
 // 搜尋過濾偏好持久化（預設未勾選，僅搜尋支援設備）
@@ -241,6 +357,7 @@ $btnConnect.addEventListener("click", async () => {
   const acceptAll = !!($chkAllDevices && $chkAllDevices.checked);
   try {
     const res = await client.connect(acceptAll);
+    saveLastConnectedDevice(client.device, res);
     updateUIConnectionState(true, res);
     $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
     if ($selFormat) {
@@ -249,6 +366,7 @@ $btnConnect.addEventListener("click", async () => {
 
     // 自動讀取設備資訊與剩餘空間
     await refreshDeviceInfo();
+    log(t("logConnectedSuccess", { name: client.device.name || res.deviceName }));
   } catch (err) {
     log(t("logConnectFailed", { msg: err.message }));
     if (!acceptAll && (err.name === "NotFoundError" || /cancelled|user cancelled/i.test(err.message))) {
@@ -2414,6 +2532,7 @@ function applyLanguage() {
   if (typeof renderSlideshowFilmstrip === "function") renderSlideshowFilmstrip();
   if (typeof updateSlideshowControlsState === "function") updateSlideshowControlsState();
   if (typeof updateSlideshowEstimate === "function") updateSlideshowEstimate();
+  updateLastDeviceUI();
 }
 
 function handleLangChange(nextLang) {
@@ -2439,3 +2558,39 @@ if (startupLang.source === "query") {
 
 updateCropTargetResolution();
 if (typeof updateSlideshowTargetResolution === "function") updateSlideshowTargetResolution();
+updateLastDeviceUI();
+
+// 啟動時若有記憶上次裝置且開啟自動連線，嘗試靜默重新連線
+async function attemptAutoReconnect() {
+  const last = getLastSavedDeviceInfo();
+  if (!last || !last.id) return;
+
+  const autoEnabled = !$chkAutoReconnect || $chkAutoReconnect.checked;
+  if (!autoEnabled) return;
+
+  if (typeof client.getPermittedDevices !== "function") return;
+
+  try {
+    const permitted = await client.getPermittedDevices();
+    if (!permitted || permitted.length === 0) return;
+
+    const target = permitted.find(d => d.id === last.id) || permitted.find(d => d.name === last.name);
+    if (!target) return;
+
+    log(t("logAutoConnecting", { name: target.name || last.name }));
+    const res = await client.connectDevice(target);
+    saveLastConnectedDevice(target, res);
+    updateUIConnectionState(true, res);
+    $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
+    if ($selFormat) {
+      $selFormat.value = res.protocolKind === "zrun_e05" ? "jpeg" : "avi";
+    }
+    log(t("logAutoConnectSuccess", { name: target.name || last.name }));
+    await refreshDeviceInfo();
+  } catch (err) {
+    log(t("logAutoConnectFailed", { name: last.name }));
+    updateUIConnectionState(false);
+  }
+}
+
+attemptAutoReconnect();

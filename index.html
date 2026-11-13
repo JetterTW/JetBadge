@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>電子徽章 (JetBadge) 管理控制台</title>
-  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=46" />
-  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v=46" />
-  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=46" />
+  <link rel="icon" type="image/x-icon" href="./favicon.ico?v=47" />
+  <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32x32.png?v=47" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=47" />
   <style>
     :root {
       --primary: #4f46e5;
@@ -153,6 +153,15 @@
     }
     button.btn-outline:hover:not(:disabled) {
       background: #334155;
+    }
+    button.btn-accent {
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(16, 185, 129, 0.35);
+    }
+    button.btn-accent:hover:not(:disabled) {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      box-shadow: 0 4px 10px rgba(16, 185, 129, 0.45);
     }
 
     .btn-refresh-pill {
@@ -302,6 +311,44 @@
       margin-top: 8px;
       padding-top: 6px;
       border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+
+    /* Last Connected Device Bar */
+    .last-device-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 12px;
+      background: rgba(16, 185, 129, 0.08);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    .last-device-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #a7f3d0;
+    }
+    .last-device-icon {
+      font-size: 14px;
+    }
+    .btn-text-danger {
+      background: transparent;
+      border: none;
+      color: #f87171;
+      font-size: 11px;
+      padding: 2px 6px;
+      cursor: pointer;
+      text-decoration: underline;
+      border-radius: 4px;
+      transition: color 0.15s ease;
+    }
+    .btn-text-danger:hover {
+      color: #ef4444;
+      background: rgba(239, 68, 68, 0.1);
+      transform: none;
     }
 
     /* Device Info Grid */
@@ -741,6 +788,7 @@
           <span class="status-dot"></span>
           <span id="connStatusText">未連線</span>
         </div>
+        <button id="btnQuickReconnect" class="btn-accent" style="display: none;" data-i18n="btnQuickReconnect">⚡ 重新連線</button>
         <button id="btnConnect" data-i18n="btnConnect">搜尋並連接徽章</button>
         <button id="btnDisconnect" class="btn-outline" data-i18n="btnDisconnect" disabled>中斷連線</button>
       </div>
@@ -757,6 +805,21 @@
       </div>
 
       <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+        <div id="lastDeviceBox" class="last-device-bar" style="display: none;">
+          <div class="last-device-info">
+            <span class="last-device-icon">💾</span>
+            <span><strong data-i18n="labelLastDevice">上次裝置：</strong><span id="lastDeviceNameText">-</span></span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button id="btnForgetDevice" class="btn-text-danger" data-i18n="btnForgetDevice" title="清除已記憶的裝置記錄">✕ 清除記憶</button>
+          </div>
+        </div>
+
+        <label class="checkbox-label" id="lblAutoReconnect">
+          <input type="checkbox" id="chkAutoReconnect" checked />
+          <span data-i18n="chkAutoReconnectLabel">開啟網頁時自動重新連線（若徽章已開機在附近）</span>
+        </label>
+
         <details class="scan-filter-details" id="detailsScanFilter">
           <summary class="scan-filter-summary">
             <span data-i18n="summaryScanFilter">🔍 搜尋過濾：預設僅顯示支援徽章（找不到時點此展開）</span>
@@ -1117,6 +1180,6 @@
     </div>
   </div>
 
-  <script type="module" src="./app.js?v=46"></script>
+  <script type="module" src="./app.js?v=47"></script>
 </body>
 </html>
