@@ -4,8 +4,8 @@
  * - BG02 / oem_DG01 (SuperBand NUS 7E400001-B5A3-F393-E0A9-E50E24DCCA9D)
  * - E05 / E87 (ZRun / JieLi RCSP AE00 + C2E6FD00-E966-1000-8000-BEF9C223DF6A)
  */
-import { t } from "./i18n.js?v=47";
-import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=47";
+import { t } from "./i18n.js?v=48";
+import { ZRUN_E05_SERVICES, ZrunE05Session, buildZrunMjpgAvi } from "./zrun_e05.js?v=48";
 
 export const BleProfiles = [
   {
@@ -71,6 +71,8 @@ export class SuperBandClient {
     this.screenHeight = 240;
     this.activeDialId = 0x000015A2;
     this.quietRxLog = false;
+    this.isBusy = false;
+    this.keepAliveTimer = null;
   }
 
   log(msg) {
@@ -78,6 +80,13 @@ export class SuperBandClient {
   }
 
   get isConnected() {
+    if (this.server && !this.server.connected) {
+      this.cleanup();
+      if (this.onDisconnected) {
+        try { this.onDisconnected(); } catch (_) {}
+      }
+      return false;
+    }
     if (this.protocolKind === "zrun_e05") {
       return !!(this.server && this.server.connected && this.zrunSession && this.zrunSession.isAttached);
     }
@@ -92,6 +101,51 @@ export class SuperBandClient {
       return await navigator.bluetooth.getDevices();
     } catch (_) {
       return [];
+    }
+  }
+
+  startKeepAlive(intervalMs = 15000) {
+    this.stopKeepAlive();
+    this.keepAliveTimer = setInterval(async () => {
+      if (!this.isConnected || this.isBusy) return;
+      try {
+        if (this.protocolKind === "zrun_e05" && this.zrunSession) {
+          await this.zrunSession.getBatteryLevel();
+        } else if (this.writeChar) {
+          await this.getBatteryLevel();
+        }
+      } catch (_) {}
+    }, intervalMs);
+    if (this.keepAliveTimer && typeof this.keepAliveTimer.unref === "function") {
+      this.keepAliveTimer.unref();
+    }
+  }
+
+  stopKeepAlive() {
+    if (this.keepAliveTimer) {
+      clearInterval(this.keepAliveTimer);
+      this.keepAliveTimer = null;
+    }
+  }
+
+  async ensureConnected() {
+    if (this.isConnected) return true;
+    let target = this.device;
+    if (!target) {
+      const permitted = await this.getPermittedDevices();
+      if (permitted && permitted.length > 0) {
+        target = permitted[0];
+      }
+    }
+    if (!target) return false;
+
+    this.log(t("logAutoReconnectingForUpload"));
+    try {
+      await this.connectDevice(target);
+      return this.isConnected;
+    } catch (err) {
+      this.log(t("logAutoReconnectFailed", { msg: err.message }));
+      return false;
     }
   }
 
@@ -149,6 +203,7 @@ export class SuperBandClient {
     if (!device) {
       throw new Error(t("errDeviceNotFound"));
     }
+    this.stopKeepAlive();
     this.device = device;
     this.log(t("logSelectedDevice", { name: this.device.name || t("unnamedDevice"), id: this.device.id }));
 
@@ -278,6 +333,8 @@ export class SuperBandClient {
       throw lastError || new Error(t("errNoMatchingProfile"));
     }
 
+    this.startKeepAlive(15000);
+
     return {
       deviceName: this.device.name || (this.protocolKind === "zrun_e05" ? "E05 Badge" : "SuperBand Badge"),
       profileName: this.activeProfile.nameKey ? t(this.activeProfile.nameKey) : this.activeProfile.name,
@@ -287,6 +344,8 @@ export class SuperBandClient {
   }
 
   cleanup() {
+    this.stopKeepAlive();
+    this.isBusy = false;
     if (this.zrunSession) {
       try { this.zrunSession.cleanup(); } catch (_) {}
       this.zrunSession = null;
@@ -304,6 +363,7 @@ export class SuperBandClient {
   }
 
   async disconnect() {
+    this.stopKeepAlive();
     if (this.zrunSession) {
       try { await this.zrunSession.disconnect(); } catch (e) {}
     }
@@ -1276,8 +1336,15 @@ export class SuperBandClient {
    */
   uploadDialImage(rawFileBytes, onProgress = null, options = {}) {
     if (!this.isConnected) throw new Error(t("errNotConnected"));
+    this.isBusy = true;
     if (this.protocolKind === "zrun_e05" && this.zrunSession) {
-      return this.zrunSession.uploadFile(rawFileBytes, onProgress, options);
+      return (async () => {
+        try {
+          return await this.zrunSession.uploadFile(rawFileBytes, onProgress, options);
+        } finally {
+          this.isBusy = false;
+        }
+      })();
     }
 
     const rawArr = rawFileBytes instanceof Uint8Array ? rawFileBytes : new Uint8Array(rawFileBytes);
@@ -1320,7 +1387,8 @@ export class SuperBandClient {
     };
 
     return (async () => {
-      // 1. 發送 17 位元組 START 握手封包 (CMD 31, SUB 2)
+      try {
+        // 1. 發送 17 位元組 START 握手封包 (CMD 31, SUB 2)
       const startPayload = SuperBandClient.buildDialStartPayload(totalBytes, {
         fontPos,
         custom: isCustom,
@@ -1616,8 +1684,11 @@ export class SuperBandClient {
         ext: extLabel,
       }));
       return { success: true, status: finishStatus };
-    })();
-  }
+    } finally {
+      this.isBusy = false;
+    }
+  })();
+}
 
   parseStatus(frame) {
     if (!frame || !frame.payload || frame.magic === 0xDC || frame.payload.length < 2) return null;

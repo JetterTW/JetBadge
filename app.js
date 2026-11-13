@@ -1,5 +1,5 @@
-import { SuperBandClient } from "./baji.js?v=47";
-import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=47";
+import { SuperBandClient } from "./baji.js?v=48";
+import { initLanguage, setLanguage, getCurrentLang, t } from "./i18n.js?v=48";
 
 // DOM 元素引用
 const $ = (id) => document.getElementById(id);
@@ -305,6 +305,59 @@ if ($btnForgetDevice) {
   });
 }
 
+// 執行連線至特定設備並初始化狀態
+async function performDeviceConnection(target) {
+  const res = await client.connectDevice(target);
+  saveLastConnectedDevice(target, res);
+  updateUIConnectionState(true, res);
+  if ($infoProfile) {
+    $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
+  }
+  if ($selFormat) {
+    $selFormat.value = res.protocolKind === "zrun_e05" ? "jpeg" : "avi";
+  }
+  await refreshDeviceInfo();
+  log(t("logConnectedSuccess", { name: target.name || res.deviceName }));
+  return res;
+}
+
+// 傳輸前檢查連線狀態，若徽章待機或暫時斷線則自動無縫重新連線
+async function ensureConnectionActive(statusMessage = t("progressAutoReconnecting")) {
+  if (client.isConnected) return true;
+  let target = client.device;
+  const last = getLastSavedDeviceInfo();
+  if (!target && typeof client.getPermittedDevices === "function") {
+    try {
+      const permitted = await client.getPermittedDevices();
+      if (permitted && permitted.length > 0) {
+        if (last && last.id) {
+          target = permitted.find(d => d.id === last.id) || permitted.find(d => d.name === last.name) || permitted[0];
+        } else {
+          target = permitted[0];
+        }
+      }
+    } catch (_) {}
+  }
+  if (!target) {
+    updateUIConnectionState(false);
+    return false;
+  }
+
+  showProgress(true, statusMessage);
+  log(t("logAutoReconnectingForUpload"));
+  try {
+    await performDeviceConnection(target);
+    log(t("logAutoReconnectSuccess"));
+    return true;
+  } catch (err) {
+    log(t("logAutoReconnectFailed", { msg: err.message }));
+    updateUIConnectionState(false);
+    return false;
+  } finally {
+    showProgress(false);
+  }
+}
+
 // 快速重新連線按鈕
 if ($btnQuickReconnect) {
   $btnQuickReconnect.addEventListener("click", async () => {
@@ -318,15 +371,7 @@ if ($btnQuickReconnect) {
         return;
       }
       log(t("logQuickConnecting", { name: target.name || last.name }));
-      const res = await client.connectDevice(target);
-      saveLastConnectedDevice(target, res);
-      updateUIConnectionState(true, res);
-      $infoProfile.textContent = res.profileKey ? t(res.profileKey) : res.profileName;
-      if ($selFormat) {
-        $selFormat.value = res.protocolKind === "zrun_e05" ? "jpeg" : "avi";
-      }
-      await refreshDeviceInfo();
-      log(t("logConnectedSuccess", { name: target.name || last.name }));
+      await performDeviceConnection(target);
     } catch (err) {
       log(t("logConnectFailed", { msg: err.message }));
       updateUIConnectionState(false);
@@ -894,8 +939,11 @@ function getCroppedCanvas() {
 $btnUploadCropped.addEventListener("click", async () => {
   hideNotice();
   if (!client.isConnected) {
-    showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodyPhoto" });
-    return;
+    const reconnected = await ensureConnectionActive();
+    if (!reconnected) {
+      showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodyPhoto" });
+      return;
+    }
   }
   if (!currentImg) {
     showNotice("warn", { titleKey: "noticeNoPhotoTitle", bodyKey: "noticeNoPhotoBody" });
@@ -1483,8 +1531,11 @@ async function encodeMediaFileToMjpegAvi(file, targetW, targetH, maxAviBytes = 2
 $btnUploadMedia.addEventListener("click", async () => {
   hideNotice();
   if (!client.isConnected) {
-    showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodyMedia" });
-    return;
+    const reconnected = await ensureConnectionActive();
+    if (!reconnected) {
+      showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodyMedia" });
+      return;
+    }
   }
   if (!currentMediaFile) {
     showNotice("warn", { titleKey: "noticeNoMediaTitle", bodyKey: "noticeNoMediaBody" });
@@ -2362,8 +2413,11 @@ if ($btnUploadSlideshow) {
   $btnUploadSlideshow.addEventListener("click", async () => {
     hideNotice();
     if (!client.isConnected) {
-      showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodySlideshow" });
-      return;
+      const reconnected = await ensureConnectionActive();
+      if (!reconnected) {
+        showNotice("warn", { titleKey: "noticeNotConnectedTitle", bodyKey: "noticeNotConnectedBodySlideshow" });
+        return;
+      }
     }
     if (slides.length === 0) {
       showNotice("warn", { titleKey: "noticeNoSlidesTitle", bodyKey: "noticeNoSlidesBody" });
@@ -2446,6 +2500,10 @@ function switchTab(targetId) {
   document.querySelectorAll(".tab-pane").forEach((p) => {
     p.classList.toggle("active", p.id === targetId);
   });
+  if (targetId === "tab-slideshow") {
+    if ($btnUploadSlideshow) $btnUploadSlideshow.disabled = !client.isConnected;
+    if (typeof updateSlideshowEstimate === "function") updateSlideshowEstimate();
+  }
 }
 
 document.querySelectorAll(".tab-btn").forEach(btn => {

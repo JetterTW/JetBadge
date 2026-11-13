@@ -5,7 +5,7 @@
  * - Image/Auth Service: 0000AE00-0000-1000-8000-00805F9B34FB (Write AE01, Notify AE02)
  * - Control Service:    C2E6FD00-E966-1000-8000-BEF9C223DF6A (Write FD02, Notify FD01/FD03/FD05)
  */
-import { t } from "./i18n.js?v=47";
+import { t } from "./i18n.js?v=48";
 
 export const ZRUN_E05_SERVICES = {
   AE_SERVICE_UUID: "0000ae00-0000-1000-8000-00805f9b34fb",
@@ -725,7 +725,8 @@ export class ZrunE05Session {
     }
 
     this.authInFlight = (async () => {
-      const mirrorQueue = [...this.notificationQueue];
+      this.notificationQueue = [];
+      const mirrorQueue = [];
       const onMirror = (event) => {
         const val = event.target?.value;
         if (!val) return;
@@ -1175,6 +1176,7 @@ export class ZrunE05Session {
         }
         if (onProgress) onProgress(payloadBytes.length, payloadBytes.length, 100);
         this.log(t("logZrunUploadComplete"));
+        await sleep(350);
       };
 
       let currentAck;
@@ -1276,6 +1278,8 @@ export class ZrunE05Session {
       throw err;
     } finally {
       fileCompleteAutoRespond = false;
+      this.isAuthenticated = false;
+      this.notificationQueue = [];
       for (const c of this.notifyChars) {
         c.removeEventListener("characteristicvaluechanged", onMirror);
         c.removeEventListener("characteristicvaluechanged", onFileCompleteFast);
