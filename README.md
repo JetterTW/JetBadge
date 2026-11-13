@@ -1,6 +1,9 @@
 # ⚡ 電子徽章 (JetBadge) 管理控制台 / JetBadge Web E-Badge Console
 
-[繁體中文說明](#繁體中文說明) | [English Documentation](#english-documentation)
+> 🌐 **線上免安裝正式版 / Live Web App**：[https://jet3c.com/jetbadge/](https://jet3c.com/jetbadge/)  
+> （直接以 Chrome 或 Edge 開啟即可連線藍牙徽章，免下載免安裝！）
+
+[繁體中文說明](#繁體中文說明) | [English Documentation](#english-documentation) | [線上控制台 (Live App)](https://jet3c.com/jetbadge/)
 
 ![JetBadge Web E-Badge Console Screenshot](docs/screenshot.jpg)
 
@@ -9,6 +12,8 @@
 ## 繁體中文說明
 
 **電子徽章 (JetBadge) 管理控制台** 是一個純前端 Web 管理介面，透過瀏覽器原生的 **Web Bluetooth API** 直接與電子徽章無線連線，支援 **SuperBand / BG02 / DG01**（JieLi AC695N / BR28）與 **ZRun / E05 / E87**（`AE00` + `C2E6FD00` JieLi RCSP，自動偵測協定），無需手機 App、免廣告、免安裝編譯環境，即可快速裁切相片、轉檔 GIF/MP4 並無線上傳至電子徽章。
+
+👉 **線上正式版網址（推薦，隨開即用）**：[https://jet3c.com/jetbadge/](https://jet3c.com/jetbadge/)
 
 ### 🌟 主要功能
 
@@ -43,14 +48,23 @@
 
 ---
 
-### 📦 安裝與啟動方式（Installation & Quick Start）
+### 📦 使用與啟動方式（Usage & Quick Start）
 
-#### 系統需求
+#### 方式 A：直接線上使用（推薦，免安裝任何軟體）
+直接使用電腦版 **Google Chrome** 或 **Microsoft Edge** 開啟線上正式版：  
+👉 **[https://jet3c.com/jetbadge/](https://jet3c.com/jetbadge/)**  
+點擊右上角 **「搜尋並連接徽章」** 即可直接開始裁切與無線傳輸！
+
+---
+
+#### 方式 B：本機離線執行
+
+##### 系統需求
 - **作業系統**：Windows / macOS / Linux（具備藍牙功能）
 - **Python**：Python 3.x（僅使用內建標準函式庫，**不需執行 `pip install`**）
 - **瀏覽器**：桌機版 **Google Chrome** 或 **Microsoft Edge**（需支援 Web Bluetooth）
 
-#### 安裝步驟
+##### 安裝步驟
 
 1. **下載或 Clone 專案**
    ```bash
@@ -99,6 +113,8 @@
 
 **JetBadge Web E-Badge Console** (`電子徽章 (JetBadge) 管理控制台`) is a pure client-side web application built on the browser's **Web Bluetooth API**. It automatically detects and communicates with both **SuperBand / BG02 / DG01** (JieLi AC695N / BR28) and **ZRun / E05 / E87** (`AE00` + `C2E6FD00` JieLi RCSP) smart e-badges directly from Chrome/Edge—no mobile app, ads, or build toolchain required.
 
+👉 **Hosted Live Web App (Zero Setup)**: [https://jet3c.com/jetbadge/](https://jet3c.com/jetbadge/)
+
 ### 🌟 Key Features
 
 1. **One-Click BLE Discovery & Dual-Protocol Auto-Detection (BG02 / E05)**
@@ -132,14 +148,23 @@
 
 ---
 
-### 📦 Installation & Quick Start
+### 📦 Usage & Quick Start
 
-#### Requirements
+#### Option A: Use the Live Web Console (Recommended — Zero Setup)
+Open the hosted live console directly in desktop **Google Chrome** or **Microsoft Edge**:  
+👉 **[https://jet3c.com/jetbadge/](https://jet3c.com/jetbadge/)**  
+Click **"Search & Connect Badge"** to connect and upload immediately!
+
+---
+
+#### Option B: Run Locally
+
+##### Requirements
 - **OS**: Windows / macOS / Linux with Bluetooth support
 - **Python**: Python 3.x (uses only the Python standard library — **zero `pip` packages required**)
 - **Browser**: Desktop **Google Chrome** or **Microsoft Edge** with Web Bluetooth support
 
-#### Installation Steps
+##### Installation Steps
 
 1. **Clone or Download**
    ```bash
